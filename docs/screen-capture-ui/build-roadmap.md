@@ -14,7 +14,8 @@ originates no evidence: every finding it relies on was established in a precedin
 it reaches that finding by naming the section that owns it. And it reaches platform evidence the
 same way — where a phase depends on a mechanism absent from this repository, it cites
 [platform-capture-gap-assessment.md §1](./platform-capture-gap-assessment.md),
-[§2](./platform-capture-gap-assessment.md) or [§3](./platform-capture-gap-assessment.md), which is
+[platform-capture-gap-assessment.md §2](./platform-capture-gap-assessment.md) or
+[platform-capture-gap-assessment.md §3](./platform-capture-gap-assessment.md), which is
 where that mechanism and its source were assessed, rather than the platform documentation directly.
 That deliverable is the dossier's single owner of external evidence, and routing through it keeps one
 account of each mechanism rather than two that can drift.
@@ -33,19 +34,45 @@ behaviour when that surface is unavailable, and the same record stream coming ou
 property of the contract the application exposes, not of the mechanism underneath it — the mechanisms
 differ per platform and cannot be made to agree.
 
-The consequence that shapes the design is that **the consent step shapes it even on the platforms
-that do not need one.** The parity finding of
+The consequence that shapes the design is that **the contract carries an authorisation stage on
+every target, and on no target is that stage satisfied by doing nothing.** The parity finding of
 [platform-capture-gap-assessment.md §7](./platform-capture-gap-assessment.md) is that the three
 targets differ not in whether pixels can be obtained but in who authorises the obtaining and how the
-frames are then transported, and that one of the three mediates authorisation through a separate
-service with no counterpart on the other two. A contract designed without that step, and later
-retrofitted, either exposes the asymmetry to every caller on every platform or hides it and misleads
-the caller on the platform that has it. So the contract carries an authorisation stage from the
-start, and on a platform where authorisation is unconditional that stage succeeds immediately.
+frames are then transported — and that the difference reads on two independent axes, because a
+single consent axis puts a target on the wrong side of it.
 
-"Where feasible" is a real qualifier and not a hedge for its own sake. §5 records one bridge whose
-verification the dossier could not complete, and the principle it works under is that a divergence
-is recorded with its reason rather than asserted away.
+On operating-system mediation the mechanisms genuinely differ, and they differ per mechanism rather
+than per platform. The mediated Linux path requires consent as a matter of contract; the modern
+Windows mechanism that a system picker normally initiates is therefore also potentially interactive;
+and the remaining assessed mechanisms — the other Windows ones and the X11 reads — carry no
+operating-system step at all. Interactive authorisation is thus a property of two mechanisms on two
+platforms rather than of one platform, which is why "the platform that asks" is the wrong unit of
+design. On application-level authorisation there is no asymmetry to accommodate: the requirement is
+uniform across every route, including the unmediated ones, because on a route the operating system
+does not mediate nothing else stands between the application and silent capture.
+
+So the authorisation stage is present from the start, and on every route it is the application's
+own. The application obtains its authorisation before it acquires a source and exposes a recording
+state the user can observe for as long as capture is active — on the mediated Linux path and on the
+picker-led Windows mechanism exactly as on the routes where the operating system asks nothing. Where
+the platform imposes a step of its own, that step is an **additional** requirement whose outcome may
+be interactive, satisfied in addition and never instead; it does not stand in for the application's
+gate, and no route reaches capture with the gate skipped. Both halves are requirements rather than
+prudence: [functional-spec.md §1](./functional-spec.md) states that capture is authorised before it
+begins, by the application, on every platform, including those on which the operating system
+requires nothing; that platform mediation is no substitute for it, being absent on some targets and
+a deployment property rather than a contract where it is present; and that while capture is active
+the session exposes a recording state observable both in the interface and in the note stream. A
+contract designed without the stage and retrofitted later either exposes the asymmetry to every
+caller on every platform or hides it and misleads the caller on the platform that has it; a contract
+that declares the stage and lets a platform step discharge it is worse in both directions, because
+it leaves unobservable capture the normal case on the routes the operating system does not mediate,
+and on the routes it does mediate it mistakes a system dialog about handing over pixels for the
+session's own decision to record a person.
+
+"Where feasible" is a real qualifier and not a hedge for its own sake. §5 carries one bridge that
+the dossier can state and cannot confirm, and the principle it works under is that a divergence is
+recorded with its reason rather than asserted away.
 
 ## 1.2 Minimal added dependencies
 
@@ -131,9 +158,9 @@ not an aspiration stated here.
 # 2. Single-Platform Capture Prototype
 
 Phase 1 of five. It exists to establish, on one platform and with one source, that frames of a screen
-surface can reach the capture API under conditions this dossier verified, and be displayed. Every
-later phase consumes its output, so it is deliberately the narrowest phase in the roadmap: it proves
-the acquisition-to-ingestion path and nothing else.
+surface can reach the capture API under route conditions this phase observes rather than assumes,
+and be displayed. Every later phase consumes its output, so it is deliberately the narrowest phase in
+the roadmap: it proves the acquisition-to-ingestion path and nothing else.
 
 **Scope:** one platform, one source, frames reaching `VideoCapture` and being displayed. The host
 acquires the frames by the selected platform's own mechanism and hands them to the library through
@@ -158,6 +185,16 @@ requirements this phase is built to satisfy — session lifecycle, explicitly na
 conditional route selection, and the rate-and-resolution knobs — from
 [functional-spec.md §1](./functional-spec.md).
 
+One of those route conditions is a constraint on the host process's own startup order rather than on
+its configuration, and it is an input here because the route this phase selects can carry it. Where
+the X11 route through the media framework's screen-source element is the selected route, Xlib
+threading initialisation — the `XInitThreads()` call — happens **before** the library, the display
+backend, or any worker thread the application starts. Setting the plugin-load-time environment
+variable `GST_XINITTHREADS=1` instead is **not equivalent** to it: that variable causes the call only
+when the plugin is loaded, which can be later than the first thread and so too late. The condition
+is established, with the element's own account of it, in
+[platform-capture-gap-assessment.md §2](./platform-capture-gap-assessment.md).
+
 **Added dependencies:** the selected platform's acquisition mechanism, which is host code outside
 this library and carries whatever the assessed mechanism itself requires; and, on the pipeline-string
 route, the media-framework plugin that provides the screen-source element, which is a genuine added
@@ -167,12 +204,18 @@ with the demuxer that acquisition mechanism is exposed as. Nothing is added to t
 part of its source is changed.
 
 **Sequencing:** none; this phase is first. It has no predecessor, and nothing in it waits on another
-phase.
+phase. The one ordering constraint it does carry is internal to the process it builds: where the X11
+route above is the selected one, Xlib threading initialisation precedes library initialisation,
+display-backend creation and the start of the first worker thread, which places it at the top of the
+application's own startup path where no later step can reorder it.
 
 **Exit criteria:**
 
 - The selected platform is recorded together with the evidence for its selection: which mechanism,
-  which ingestion route, and the observation that both were available in the build under test.
+  which ingestion route, the observation that the route's own condition held in the build under test,
+  and — where the route chosen is a candidate carrying open items — which of those items this phase
+  settled and which it left to Phase 4 (§2.1). Targets considered and not selected are recorded with
+  the evidence that excluded them, so the exclusion is re-derivable rather than assumed.
 - Frames from an explicitly named source arrive and are displayed. Named means the application states
   which surface it opened rather than accepting whatever an auto-detection sentinel resolves to.
 - A request for an unavailable source fails explicitly, naming the source and the reason, and no
@@ -180,8 +223,31 @@ phase.
 - The route's build conditions are recorded as observed rather than as declared defaults, including
   the result of the backend-availability probe the public registry exposes
   [modules/videoio/include/opencv2/videoio/registry.hpp:45].
+- The selected route's initialisation order is recorded as it actually occurred, not as intended. On
+  the X11 route through that screen-source element the record states the order in which Xlib
+  threading initialisation, library initialisation, display-backend creation and the first worker
+  thread's start took place, states that the explicit `XInitThreads()` call was made in the
+  application's own startup path, and states that no equivalence was assumed between that call and
+  the plugin-load-time `GST_XINITTHREADS` variable — the condition being the one
+  [platform-capture-gap-assessment.md §2](./platform-capture-gap-assessment.md) establishes. On any
+  other selected route the record names the route and the initialisation order that route's own
+  conditions require, so the exit is evaluable whichever route this phase chose.
 - The open and read timeouts are set explicitly through the parameter vector the open overloads accept
   [modules/videoio/include/opencv2/videoio.hpp:877,901], and the values used are recorded.
+- The authorisation step runs before any capture begins and the recording state is observable while
+  capture is active, demonstrated on the selected platform whether or not that platform's mechanism
+  carries an operating-system step of its own, per
+  [functional-spec.md §1](./functional-spec.md) and the principle of §1.1.
+- The captured source is chosen from the objects host platform code enumerates rather than named by
+  a free-form string, and the route argument is assembled from the application's allowlist of
+  elements and properties plus that enumerated identifier, with any value carrying the route's own
+  delimiters or metacharacters rejected rather than escaped, per
+  [functional-spec.md §1](./functional-spec.md). The route argument is what decides which components
+  a session instantiates — the pipeline string is parsed by the media framework itself where it is
+  neither a valid URI nor an existing file [modules/videoio/src/cap_gstreamer.cpp:1432,1438], and the
+  environment-mediated route's options are parsed as delimited pairs
+  [modules/videoio/src/cap_ffmpeg_impl.hpp:1197] — so this exit is about the construction of that
+  argument and not about validating one after the fact.
 - Acceptance thresholds for capture frame rate and resolution are taken from user-supplied values
   where any exist. None were supplied with this request, so this exit is **recorded as blocked pending
   that product decision** rather than written against a figure this dossier would have had to invent.
@@ -192,9 +258,10 @@ The phase's first activity is to select the platform, and the selection is an ac
 evidence requirement rather than a decision this document makes. Nothing in the dossier ranks the
 three targets, and ranking them here would substitute a preference for a finding.
 
-The selection is gated on two conditions holding together for the same target. The platform must have
-an acquisition mechanism the application can use in its intended deployment posture — attended or
-unattended, whole-monitor or single-window, with or without an authorisation step — which is what
+The selection is gated on two conditions holding together for the same target. The platform must
+have an acquisition mechanism the application can use in its intended deployment posture — attended
+or unattended, whole-monitor or single-window, with or without an operating-system step of its own
+on top of the application's own authorisation — which is what
 [platform-capture-gap-assessment.md §1](./platform-capture-gap-assessment.md),
 [platform-capture-gap-assessment.md §2](./platform-capture-gap-assessment.md) and
 [platform-capture-gap-assessment.md §3](./platform-capture-gap-assessment.md) assess per platform.
@@ -204,10 +271,41 @@ condition satisfied in the build under test, which is what
 [platform-capture-gap-assessment.md §4](./platform-capture-gap-assessment.md) records as
 route-by-route bridging.
 
-Where a target satisfies the first condition but the bridge to an ingestion route was not established
-— the case the gap assessment records for one platform and for one Windows mechanism — that target is
-not eligible for this phase, because a prototype cannot rest on an unverified bridge. Recording that
-ineligibility with its reason is part of this exit, and it is also the input Phase 4 (§5) picks up.
+Neither condition disqualifies a target in advance on the evidence this dossier holds, and the
+eligibility gate is written against evidence rather than against an inherited verdict. On the
+mechanism side, every target has at least one assessed mechanism whose output an ingestion route can
+carry: [platform-capture-gap-assessment.md §1](./platform-capture-gap-assessment.md) records a route
+for each of the Windows mechanisms it assesses — two of them fronted by a single pipeline element,
+and the oldest reachable through either route;
+[platform-capture-gap-assessment.md §2](./platform-capture-gap-assessment.md) records a route for
+the X11 read; and [platform-capture-gap-assessment.md §3](./platform-capture-gap-assessment.md)
+names a concrete candidate chain for the mediated path, together with the items a build has to
+settle before that candidate is a route. So the mechanism side is satisfiable on all three targets,
+and no target is ineligible for lack of a mechanism that can reach the library.
+
+The discriminator is therefore the evidence this phase itself collects, in two parts. **Which route
+condition holds in the build under test:** the pipeline-string route needs a pipeline terminating in
+an appsink under one of the two accepted names [modules/videoio/src/cap_gstreamer.cpp:1343] and the
+element that performs the acquisition present in that installation, while the environment-mediated
+route needs device-opening support compiled in [modules/videoio/src/cap_ffmpeg_impl.hpp:1213] and a
+demuxer its input-format lookup can resolve [modules/videoio/src/cap_ffmpeg_impl.hpp:1206-1210] —
+the flags that decide either being inventoried in
+[technical-inventory.md §5](./technical-inventory.md) and the routes themselves owned by
+[current-state-capability-map.md §1](./current-state-capability-map.md). **And whether the open items
+a candidate route carries have been settled where the target under consideration needs them:** for
+the mediated path those are the items
+[platform-capture-gap-assessment.md §3](./platform-capture-gap-assessment.md) enumerates —
+ownership and lifetime of the transport descriptor across the hand-off, negotiation to a format the
+sink accepts, and behaviour when the session ends underneath the pipeline — which this phase either
+settles for its own selected target or leaves to Phase 4 (§5.2), where they are that phase's
+declared work.
+
+A target is eligible for this phase when both conditions are observed to hold for it in the build
+under test, and it is not eligible while a route condition fails there or a material open item is
+unsettled — a statement about the evidence in hand rather than about the platform, and one this
+phase can change by gathering more. Recording which targets were eligible on that basis, with the
+evidence for each and the reason for each exclusion, is part of this exit, and it is also the input
+Phase 4 (§5) picks up.
 
 ## 2.2 Route availability is a property of the build under test
 
@@ -300,9 +398,15 @@ previous retained frame, so it has nothing to compare until frames arrive.
 - Every record kind carries a monotonic time value from the session's single clock and a sequence
   number unique within the session, and both are stamped at the moment of acquisition rather than at
   the moment of writing.
-- The merge order is demonstrated on records of both kinds, including the equal-time rule: at equal
-  monotonic time an input record sorts before a frame record, so the event that caused a change
-  precedes the frame showing it, and equal time with equal kind falls through to the sequence number.
+- The merge order is demonstrated as the ascending lexicographic comparison of the triple that
+  [functional-spec.md §2](./functional-spec.md) defines — monotonic time, then kind rank over the
+  complete rank function, then the sequence number — on records of every kind the format defines
+  rather than on frames and input events alone. The rank is what makes the order total, and its
+  load-bearing consequence is the one a reviewer reads the timeline for: at equal monotonic time an
+  input record carrying an operating-system event sorts before a frame record, so the event that
+  caused a change precedes the frame showing it. An input record carrying an annotation revision
+  shares that rank without carrying that causal reading, and binds to its frame by the target field
+  the same section defines.
 - An interrupted session leaves a readable stream, to exactly the guarantee
   [functional-spec.md §5](./functional-spec.md) states and under the assumptions it names (§3.3).
 - The change gate is implemented to the score contract of
@@ -313,6 +417,20 @@ previous retained frame, so it has nothing to compare until frames arrive.
   re-derive.
 - Where the backend supplies a presentation timestamp it is recorded on frame records as
   supplementary media metadata, and it is used for no ordering decision (§3.1).
+- Key redaction is in force before any stream is retained: key content is excluded where the
+  platform marks the field secure or password-bearing and redacted by default otherwise, the record
+  keeping the event and losing only its content, and pointer records carry only the fields the merge
+  and the later aggregation consume — per [functional-spec.md §2](./functional-spec.md). This is an
+  exit of this phase and not of a later hardening pass, because a character once written into the
+  stream cannot be unwritten by any policy applied afterwards.
+- The note stream is written under the storage protections and the identifier rules of
+  [functional-spec.md §5](./functional-spec.md): the stream and the image directory created
+  accessible only to the owning account at the moment of creation, under a configured storage root
+  that is never derived from record content, with `session_id` and `annotation_id` restricted to the
+  specified character set, every path built by a canonical join and verified after resolution to lie
+  inside that root, a refused path never rewritten, the integrity metadata written with each
+  retained image, deletion under the retention policy recorded rather than inferred from an
+  unresolvable reference, and encryption at rest available as a configuration option.
 
 ## 3.1 Four adjacent properties, and why the clock is the application's
 
@@ -341,14 +459,19 @@ library behaviour it configures.
 Nothing in the capture surface hands the application a frame unasked. Retrieval is a two-step pull
 [modules/videoio/include/opencv2/videoio.hpp:951,965], and the plugin binary interface carries the
 same shape with no push or event-driven entry point
-[modules/videoio/src/plugin_capture_api.hpp:92,103]. The one readiness API requires every capture in
-the call to share a backend and dispatches to a single backend, raising an error outside it
-[modules/videoio/src/cap.cpp:629-652].
+[modules/videoio/src/plugin_capture_api.hpp:92,103]. The one readiness API
+[modules/videoio/include/opencv2/videoio.hpp:1035-1053] requires every capture in the call to share
+a backend and dispatches only to the V4L backend, raising `StsNotImplemented` for any other
+[modules/videoio/src/cap.cpp:630,652].
 
-So there is no readiness signal on which to hang a change-driven capture loop, and the consequence is
-architectural rather than inconvenient: the session polls, and the gate that decides which frames are
-retained sits above the capture object in application code. The three operators a frame-to-frame gate
-is composed from are not provided by the in-scope modules, as
+So the negative this phase is built against is a scoped one, and
+[platform-capture-gap-assessment.md §4](./platform-capture-gap-assessment.md) is the single site that
+owns it: there is no readiness or frame-available signal at the capture plugin binary interface, and
+none for a non-V4L backend, the V4L exception being real and reaching neither of the two ingestion
+routes a screen source arrives by. A screen route is therefore polled, and the consequence is
+architectural rather than inconvenient: the session's own retrieval loop drives the timing, and the
+gate that decides which frames are retained sits above the capture object in application code. The
+three operators a frame-to-frame gate is composed from are not provided by the in-scope modules, as
 [current-state-capability-map.md §2](./current-state-capability-map.md) records on the capability
 side and [functional-spec.md §3](./functional-spec.md) on the requirement side; what the in-scope
 modules do supply is the preprocessing and the interpretation of a difference image, inventoried in
@@ -421,16 +544,29 @@ presents.
 - Annotation rendering is demonstrated as composition into the frame before display, and the
   persistent annotation state it implies is recorded as belonging to the application rather than to
   this module.
+- The recording indicator is verified to be visible for as long as capture is active, and the
+  backend it was verified against is named — the same discipline as every other interaction exit
+  here. It is composed into the presented frame rather than carried by the window title, which
+  [functional-spec.md §6](./functional-spec.md) requires because a title conveys nothing on a
+  backend that logs it as unsupported and discards it
+  [modules/highgui/src/window_framebuffer.cpp:319], and it is a distinct element rather than an
+  inference from the preview updating.
 
 ## 4.1 Every display and interaction exit is backend-conditional
 
-Runtime backend membership is a fixed list built into the module
+Backend-compatible registry membership is a fixed list built into the module
 [modules/highgui/src/registry.impl.hpp:27-66]: the GTK family, a framebuffer backend, a Windows
 backend compiled only on that platform, and one further entry that is present in the source but
 disabled behind a compile-time guard [modules/highgui/src/registry.impl.hpp:51] — what the guard
-shows is work started or considered and left incomplete, and the code records no reason. Which member
-is active in a given build is not decidable from this document, which is why the probe result is an
-exit criterion rather than a premise.
+shows is work started or considered and left incomplete, and the code records no reason. That list
+is what can be selected through the module's internal backend interface, and it is not the whole of
+backend identity: the public probe returns the active backend-compatible backend's name where one is
+present and otherwise names a legacy compile-time built-in
+[modules/highgui/src/window.cpp:1096-1121], the set the installed header enumerates for it
+[modules/highgui/include/opencv2/highgui.hpp:256-261], which is the distinction §5.3 works from.
+Which implementation is active in a given build is not decidable from this document either way,
+which is why the probe result — rather than membership in that list — is the exit criterion rather
+than a premise.
 
 The condition is not a formality. The public surface declares windowing, resizing, titles, trackbars,
 pointer callbacks and region selection, and one backend implements several of them as a logged
@@ -499,11 +635,21 @@ from [functional-spec.md §1](./functional-spec.md).
 mechanism itself requires, plus the ingestion route's own dependency where the second and third
 platforms need a different one from the first. On the consent-mediated target — the Wayland path
 assessed in [platform-capture-gap-assessment.md §3](./platform-capture-gap-assessment.md) — the
-additions are the portal client that negotiates the session and the media-transport client that
-carries the frames, both host-side; the display backend for that target is a separate matter and is
-absent from runtime
-membership in this tree [modules/highgui/src/registry.impl.hpp:27-66], with its build gate carrying a
-declared default of OFF [CMakeLists.txt:235] (§5.3).
+additions are three: the portal client that negotiates the session and holds it open, the
+media-transport client that carries the frames, and the media-framework plugin providing the source
+element the candidate chain of §5.2 names, the first two host-side and the third a package the
+deployment installs. That chain is what this phase validates rather than assumes (§5.2). The display
+side of that target is a separate matter from acquisition and adds nothing here: a build in which
+the option is requested and the dependencies resolve selects the Wayland built-in display backend
+[modules/highgui/CMakeLists.txt:55-57], which is absent from backend-compatible registry membership
+[modules/highgui/src/registry.impl.hpp:27-66] and so not selectable through that path, while the
+public probe still reports `WAYLAND` from its compile-time branch
+[modules/highgui/src/window.cpp:1116-1117], and its own build gate carries a declared default of OFF
+[CMakeLists.txt:235]. So this phase gates display parity on the probe result plus per-operation
+capability, never on registry membership (§5.3). Where the X11 target is one of the two added here,
+it brings with it the initialisation-order condition Phase 1 (§2) records for that route and
+[platform-capture-gap-assessment.md §2](./platform-capture-gap-assessment.md) establishes, unchanged
+and not restated.
 
 **Sequencing:** after Phase 3, so that the contract being held constant already exists and has been
 exercised end to end on one platform. Attempting parity before there is something to be at parity
@@ -513,15 +659,30 @@ with produces three implementations and no contract.
 
 - Each additional platform reaches the same application-side contract, **or** its divergence is
   recorded with the reason and with what the divergence costs a caller.
-- The authorisation path is exercised on the consent-mediated platform, including a restored session
-  rather than only a first run, since the two differ in whether a user interaction occurs.
-- Where the bridge from that platform's mediated transport into an ingestion route cannot be
-  verified, the phase **records it as unresolved** and does not assert parity for that platform
-  (§5.2).
+- The authorisation path is exercised on the consent-mediated platform on **both** paths — a first
+  run, and a restored session where persistence was requested and granted — and the behaviour
+  observed on each is recorded per target environment rather than predicted. The two are not assumed
+  to differ: whether either presents a prompt is decided by the mediating backend and the
+  compositor's policy, a persistence grant is optional so a restore token exists only where it was
+  requested and granted, a token that does exist is single-use and replaced on each successful
+  restore, and a stored session that cannot be restored is prompted for as it would be without one,
+  all of which [platform-capture-gap-assessment.md §3](./platform-capture-gap-assessment.md) states.
+- Where validating the candidate chain of §5.2 establishes a blocker on one of its named items, the
+  phase **records that as unresolved**, names the blocking item, and does not assert parity for that
+  platform.
 - The deployment posture each platform actually supports is recorded — attended or unattended, and
   whole-monitor or window-scoped — rather than assumed uniform across the three.
-- Display and interaction parity is reported separately from capture parity, per backend rather than
-  per platform (§5.3).
+- Display and interaction parity is reported separately from capture parity: for each target, the
+  framework the public probe names at runtime
+  [modules/highgui/include/opencv2/highgui.hpp:261] and, for the backend it names, which of the
+  operations the shell uses that backend implements. The report is per backend rather than per
+  platform, and it is never inferred from registry membership (§5.3).
+- The application-level authorisation path and the observable recording state are exercised on
+  **every** target, including the targets whose mechanisms carry no operating-system step, since
+  those are precisely where the requirement of [functional-spec.md §1](./functional-spec.md) is the
+  only thing standing between a session and capture the user cannot detect (§1.1). A target on which
+  the operating system asks nothing is not thereby exempt from this exit; it is the target the exit
+  exists for.
 
 ## 5.1 What parity is, and what it is not
 
@@ -529,55 +690,120 @@ The parity substance, so that this phase has a criterion rather than an aspirati
 differ **not in whether pixels can be obtained but in who authorises the obtaining and how the frames
 are transported**, which is the comparison
 [platform-capture-gap-assessment.md §7](./platform-capture-gap-assessment.md) draws across the three
-assessments. The X11 path admits an unmediated read
-[platform-capture-gap-assessment.md §2](./platform-capture-gap-assessment.md); the Windows path is
-likewise unmediated but binds its modern mechanisms to a graphics device
-[platform-capture-gap-assessment.md §1](./platform-capture-gap-assessment.md); and the Wayland path
-mediates authorisation through a separate service and delivers frames over a separate transport
+assessments, on the two axes §1.1 works from. The X11 path admits an unmediated read
+[platform-capture-gap-assessment.md §2](./platform-capture-gap-assessment.md). The Windows path
+offers both postures at once: one mechanism normally initiated through a system picker and therefore
+potentially interactive, and others with no operating-system step at all, with the modern mechanisms
+bound to a graphics device
+[platform-capture-gap-assessment.md §1](./platform-capture-gap-assessment.md). The mediated Linux
+path negotiates a session with a separate service, under a policy the application does not own, and
+delivers frames over a separate transport
 [platform-capture-gap-assessment.md §3](./platform-capture-gap-assessment.md).
 
-What follows for the contract is the asymmetry §1.1 already committed to: a portable abstraction must
-accommodate an authorisation step that has no counterpart on the other two targets. That is why this
-phase's exit is about the contract holding rather than about the mechanisms converging, and why the
-posture each platform supports is recorded rather than presumed — an application designed around
-unattended operation on one target may require a user interaction on another, and that is a
+What follows for the contract is the shape §1.1 already committed to, and it is three things rather
+than one. A platform authorisation step — additional to the application's own, and potentially
+interactive in its outcome — on two of the three targets. A session lifetime that only one target
+imposes, which is what is genuinely distinctive about the mediated path — a source selection
+callable once per session, an optional persistence grant, a single-use restore token where one is
+returned, and a transport addressed separately from the session. And the application's own
+authorisation and observable recording state on all three without exception: on the targets whose
+routes the operating system does not mediate nothing else would reveal that a session is running,
+and on the mediated routes the platform's step is satisfied in addition rather than instead. That is
+why this phase's exit is about the contract holding rather than about the mechanisms converging, and
+why the posture each platform supports is recorded rather than presumed — an application designed
+around unattended operation on one target may require a user interaction on another, and that is a
 contract-visible difference even when the frames are identical.
 
 The mechanisms themselves, and the sources establishing them, are not restated here. They belong to
 the three platform sections, which is the single-ownership rule this document works under, and a
 second account of a mechanism is exactly where its condition gets dropped.
 
-## 5.2 The consent-mediated bridge is an open dependency
+## 5.2 The consent-mediated bridge is a candidate this phase validates
 
-This phase carries one unresolved dependency, and writing it as resolved would be the dossier's worst
-failure mode.
-[platform-capture-gap-assessment.md §3](./platform-capture-gap-assessment.md) records that the bridge
-from a mediated screencast session into an ingestion route has no sourced, working contract: carrying
-the session's transport handle and the stream's target identity into a media-framework element
-implies an owner for the session's lifetime, a transfer mechanism for the handle, negotiation on the
-library side, and an added source dependency, and the dossier established none of that chain.
+This phase carries one dependency whose end-to-end path the dossier can state and cannot confirm,
+and writing it as either settled or impossible would misreport it in opposite directions.
+[platform-capture-gap-assessment.md §3](./platform-capture-gap-assessment.md) names a concrete
+candidate chain and sources each of its links separately: the mediated session yields a transport
+descriptor and a monotonic serial identifying the granted stream, the media framework's source
+element for that transport accepts exactly those two values as properties, and the library accepts a
+manual pipeline whose terminating element is an appsink under one of two accepted names
+[modules/videoio/src/cap_gstreamer.cpp:1343], searching the parsed pipeline for an element so named
+[modules/videoio/src/cap_gstreamer.cpp:1502] and failing where there is none
+[modules/videoio/src/cap_gstreamer.cpp:1534]. The chain is
+`pipewiresrc fd=<fd> target-object=<serial> ! <conversion> ! appsink name=appsink0`, with the session
+opened and held by the application and both values obtained from it.
 
-So this phase does not treat parity on that platform as achievable by construction. Its work there
-begins with establishing the bridge, and its exit admits three outcomes: the bridge is established
-and the contract holds; the bridge is established and the contract holds with a recorded divergence;
-or the bridge is not established and the phase records that as unresolved, leaving the platform
+So this phase's work on that platform is the validation of a named candidate rather than a search for
+a mechanism, and what it validates is enumerated rather than left as "the bridge". Six items: three
+are the ones §3 records as unsettled — the descriptor, the negotiation and the failure behaviour —
+and three are conditions the chain carries on its face:
+
+- **Session lifetime and its owner.** The session belongs to the application; the library has no
+  session concept to own it with. The phase records which component opens the session, holds it and
+  closes it, and how that lifetime is ordered against the capture object's own.
+- **Transfer of the descriptor.** The descriptor belongs to the session and is handed to an element
+  constructed inside the library's pipeline. Who duplicates it, who closes it, and in what order
+  relative to the pipeline's teardown is documented by neither side of that boundary, so the phase
+  establishes it by observation rather than by reading.
+- **Target identity by serial.** The granted stream is addressed by its monotonic serial rather than
+  by a reusable identifier, and the phase records that the element was targeted that way and that the
+  identity is re-established correctly after a restore.
+- **Caps negotiation.** The sink path has to negotiate a format it accepts, and the source may
+  negotiate buffers carrying their own memory type rather than plain system-memory video — which is
+  why the chain shows an explicit conversion stage. The phase records the conversion that resolved
+  the negotiation and the format the sink actually received.
+- **The sink-naming condition.** The pipeline terminates in an appsink named as the library requires
+  [modules/videoio/src/cap_gstreamer.cpp:1343]; a chain that satisfies everything else and fails this
+  is rejected at open with no frames delivered
+  [modules/videoio/src/cap_gstreamer.cpp:1534].
+- **Failure behaviour.** What the chain does when the session is revoked, or when a persistence
+  grant's token is replaced, needs a defined answer, because the session can end without the pipeline
+  being told. The phase defines that behaviour and demonstrates it, under the explicit-failure
+  principle of §1.4.
+
+The exit admits three outcomes: validation succeeds and the contract holds; validation succeeds and
+the contract holds with a recorded divergence; or validation establishes a blocker on one of the six
+items, which the phase **records as unresolved**, naming the blocking item and leaving the platform
 outside the parity claim. The third outcome is a legitimate result of this phase, not a failure of
-it, and Phase 1's platform selection (§2.1) is what keeps the roadmap from having depended on it
-earlier.
+it, and Phase 1's evidence-based platform selection (§2.1) is what keeps the roadmap from having
+depended on it earlier.
 
 ## 5.3 Display parity is a separate question from capture parity
 
 The two are independent and are reported separately. Capture parity is about acquisition mechanisms
-and ingestion routes; display parity is about which runtime display backend is available on each
-platform and which operations that backend implements — the condition §4 established, which is a
-property of the backend rather than of the platform.
+and ingestion routes; display parity is about which display backend is active on each platform and
+which operations that backend implements — the condition §4 established, which is a property of the
+backend rather than of the platform.
 
-The two questions can diverge on the same target: a platform may have a verified capture path and no
-display backend of the same name in this tree's runtime membership
-[modules/highgui/src/registry.impl.hpp:27-66], in which case the session captures there and previews
-through a different backend, with the interaction features that backend does not implement reported
-unavailable. Reporting one number for "platform support" would hide exactly that case, which is why
-the exit asks for a per-backend report.
+Two levels of backend identity have to be kept apart for that report to be correct, and
+[platform-capture-gap-assessment.md §3](./platform-capture-gap-assessment.md) is where the
+distinction is drawn. Backend-compatible registry membership is the built-in list
+[modules/highgui/src/registry.impl.hpp:27-66], and absence from it bounds what can be selected
+through the registry path and nothing more. Compile-time built-in identity is the other level, and
+the public probe reports it: the probe consults the backend-compatible backend first and falls
+through to a compile-time branch when there is none
+[modules/highgui/src/window.cpp:1096-1121], its own documentation naming the frameworks it can
+return that way [modules/highgui/include/opencv2/highgui.hpp:258-261]. A target whose display
+backend is outside the membership list can therefore still be the framework the probe names at
+runtime. Collapsing the two levels produces a wrong verdict in either direction — a target reported
+as having no display surface when the probe names one, or a probe result read as a guarantee that
+every declared operation works.
+
+So this phase builds the display report from what the probe returns on each target
+[modules/highgui/include/opencv2/highgui.hpp:261] and, for the backend it names, which of the
+operations the shell uses that backend actually implements. The second half remains as §4 found it: a
+public declaration does not imply uniform support, and one backend accepts a mouse-callback
+registration and a trackbar creation and does nothing with either beyond logging that neither is
+supported
+[modules/highgui/src/window_framebuffer.cpp:322-324,327-333], refusing window titles the same way
+[modules/highgui/src/window_framebuffer.cpp:319].
+
+The two questions can diverge on the same target in either direction: a verified capture path
+alongside a probe-named backend that previews but carries no pointer input, so the session captures
+there and its interaction features are reported unavailable; or a backend implementing every control
+the shell needs while that target's capture route is the unresolved one of §5.2. Reporting one number
+for "platform support" would hide both cases, which is why the exit asks for the probe result and the
+per-operation support of the backend it names.
 
 # 6. Text/Action Extraction Layer
 
@@ -628,6 +854,12 @@ extraction needs the correlated timeline; and both write into a record taxonomy 
 - Extraction failure is demonstrated to be independent of capture: a frame whose extraction failed is
   still an admitted frame and still produces a record, with the four-state extraction status
   [functional-spec.md §5](./functional-spec.md) specifies.
+- Extraction output is subject to the same storage protections and retention rules as the records it
+  enriches — owner-only permissions applied at creation, the configured storage root, the restricted
+  identifiers with their canonical join and post-resolution containment check, and deletion recorded
+  rather than inferred — per [functional-spec.md §5](./functional-spec.md). Recognised text is a
+  transcript of whatever was on the screen, so an extraction payload written outside those rules
+  would reopen on the derived data exactly what Phase 2 closed on the source records.
 
 ## 6.1 The condition every text verdict carries, and where confidence stops
 

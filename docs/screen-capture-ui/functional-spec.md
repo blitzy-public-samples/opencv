@@ -62,6 +62,26 @@ enumerating the complete set of concrete backend identifiers
 ingestion onward. The application is a consumer of the library, and the platform-facing half is its
 own code.
 
+**Capture is authorised before it begins, by the application, on every platform.** This session
+records a user's screen and — through the stream of §2 — the keys they press, so the decision to
+start is not one an application may take on the user's behalf. Some platforms interpose their own
+consent step and some interpose none; the requirement here is independent of that, because a
+requirement that only applies where the operating system happens to ask would leave the platforms
+that ask nothing with silent capture. The application therefore obtains its own authorisation
+before it acquires a source, and it exposes a recording state that is observable for as long as
+capture is active — observable in the interface (R6.15) and recorded in the stream, so that
+"is this recording?" is answerable at any moment and after the fact. Where platform consent is also
+required it is satisfied in addition, never instead (R1.14).
+
+**The source is chosen from enumerated platform objects, never parsed from free text.** The
+application enumerates what the platform offers — a monitor index, a window handle, a portal stream
+serial — and the user picks one of those objects; the selection the session carries forward is the
+object's own identifier. Nothing a user types, and nothing read from a window's title, becomes the
+thing that identifies a source. That is a correctness requirement before it is a security one,
+because a title is not unique and does not survive the window changing it; but it is also what
+keeps an attacker-influenced string — a window title is chosen by whoever wrote the window's
+contents — out of the route arguments of §1.3.
+
 ## 1.3 Route selection is decided per build, not fixed here
 
 Two documented routes admit an externally produced frame source, and they are owned in full — with
@@ -84,6 +104,30 @@ source identity (§5). Absent an equivalence mapping between the two routes' own
 is no fallback — a stream whose recorded source changed meaning midway is not a timeline anyone can
 review.
 
+**Both routes take a string that something else parses, and that is what constrains how the
+argument is built.** The pipeline-string route hands its argument to the media framework's own
+parser when the argument is neither a valid URI nor an existing file
+[modules/videoio/src/cap_gstreamer.cpp:1432,1438], so the string decides which elements exist and
+what properties they carry. The environment-mediated route's options are parsed as a
+delimiter-separated list, `";"` separating a key from its value and `"|"` separating one pair from
+the next [modules/videoio/src/cap_ffmpeg_impl.hpp:1197], read from a single variable
+[modules/videoio/src/cap_ffmpeg_impl.hpp:1184]. Three rules follow, and they are requirements
+(R1.18 through R1.20):
+
+- No untrusted value is interpolated into either argument. The source identity comes from the
+  enumerated platform object of §1.2, so the value placed in a route argument is an index, a handle
+  or a serial the platform issued — never a window title, a user-typed string or anything else
+  whose content someone outside the application chose.
+- A value that carries the route's own delimiters or metacharacters is **rejected**, not escaped.
+  For the options grammar that means a value containing `;` or `|`; for the pipeline route it means
+  a value carrying the parser's own separators or property syntax. Rejection rather than escaping,
+  because an escaping rule is a second parser the application would have to keep in step with the
+  one it is feeding, and start failing explicitly is a defined outcome here (R1.7).
+- The elements and properties a route argument may name are drawn from an allowlist the application
+  holds. A route argument is assembled from that allowlist and the enumerated source identifier and
+  from nothing else, so the set of components a session can instantiate is fixed by the application
+  rather than by its inputs.
+
 ## 1.4 Frame rate and resolution are expressed against knobs, not targets
 
 A screen-capture session trades frame rate against resolution and against the cost of everything
@@ -96,9 +140,31 @@ Capture configuration is untyped, by integer property identifier
 against are frame width and height [modules/videoio/include/opencv2/videoio.hpp:136,137], frame
 rate [modules/videoio/include/opencv2/videoio.hpp:138] and buffer size
 [modules/videoio/include/opencv2/videoio.hpp:172]. The enumeration assigns each identifier a
-meaning and no value; which of them a given backend honours is the backend's business. Two
-consequences are requirements rather than advice: a requested rate or size is a request and must be
-read back, and the session records the values actually in effect rather than the values asked for.
+meaning and no value; which of them a given backend honours is the backend's business.
+
+What follows is a requirement rather than advice, and it is stated at the width the library's own
+documentation supports rather than one step further. **A read-back value is not proof of effect.**
+The setter's own note says that even when it returns true this "doesn't ensure that the property
+value has been accepted by the capture device"
+[modules/videoio/include/opencv2/videoio.hpp:995-998], and the getter's note says the value it
+returns "might be different from what really used by the device" and may be encoded by
+device-dependent rules [modules/videoio/include/opencv2/videoio.hpp:1007-1017]. So there are three
+different values here, they are named separately throughout this specification, and no requirement
+treats one as another:
+
+- **Requested** — the value the session asked for through the property setter or the open
+  parameters. It is a request and nothing more.
+- **Backend-reported** — the value the property getter returns
+  [modules/videoio/include/opencv2/videoio.hpp:1000-1017]. It carries both caveats above: it is
+  what the layers below report, not a guarantee of what the device is doing, and it may be encoded
+  in the device's own units.
+- **Observed** — what the delivered frames actually show: the dimensions of the frames the session
+  receives, read from the frames themselves, and the delivery cadence measured over the frames as
+  they arrive.
+
+The session records all three, and where they disagree the observed values are what describe the
+session. Only observed values may be presented to a user or a consumer as what was captured; a
+backend-reported value is recorded as a report, never as the effective configuration.
 
 Where a deployment needs a specific rate or resolution, that figure is a product decision this
 specification does not supply, and the affected acceptance criterion is blocked pending that
@@ -282,7 +348,8 @@ because a frame is stamped when it is retrieved and not when it is written (§2.
   mapping exists, there is no fallback.
 
 - **R1.9** Capture rate and frame size shall be requested through the capture properties, and the
-  values in effect read back and recorded.
+  requested, backend-reported and observed values shall all be recorded, with the observed values
+  taken as the description of the session.
 
   Verdict: Conditional
 
@@ -291,8 +358,15 @@ because a frame is stamped when it is retrieved and not when it is written (§2.
   [modules/videoio/include/opencv2/videoio.hpp:136,137], rate
   [modules/videoio/include/opencv2/videoio.hpp:138], buffer size
   [modules/videoio/include/opencv2/videoio.hpp:172] — and which of them a back-end honours is the
-  back-end's business, so a request is not a guarantee and the session records what it reads back.
-  The inventory of these knobs is [technical-inventory.md §1](./technical-inventory.md).
+  back-end's business. The setter documents that a true return "doesn't ensure that the property
+  value has been accepted by the capture device"
+  [modules/videoio/include/opencv2/videoio.hpp:995-998] and the getter documents that its value
+  "might be different from what really used by the device"
+  [modules/videoio/include/opencv2/videoio.hpp:1007-1017], so read-back is a report and is never
+  recorded as the effective configuration. The observed values — the dimensions of the frames the
+  session receives and the cadence measured as they arrive — are the application's to derive from
+  the delivered frames, and they are what §5.2's `session` record carries as what was captured. The
+  inventory of these knobs is [technical-inventory.md §1](./technical-inventory.md).
 
 - **R1.10** Open and read latency shall be bounded explicitly rather than inherited from the
   back-end default.
@@ -371,6 +445,64 @@ because a frame is stamped when it is retrieved and not when it is written (§2.
   [technical-inventory.md §1](./technical-inventory.md). R1.6 is what makes the absence survivable:
   frames reach the capture object without the source being first-class.
 
+- **R1.16** No capture shall begin without an application-level authorisation step, on every
+  platform, including those on which the operating system requires nothing.
+
+  Verdict: Host work
+
+  Owner: the application's session controller, which runs the step before it acquires a source
+  (§1.1), and host platform code where a platform imposes its own consent step in addition. The
+  library contributes nothing to this and cannot: the call that starts reading frames
+  [modules/videoio/include/opencv2/videoio.hpp:864] has no notion of a user or a permission, so an
+  authorisation gate that is not in the application does not exist at all. Platform mediation is not
+  a substitute, because it is absent on some targets and its presence is a deployment property
+  rather than a contract (R1.14).
+
+- **R1.17** While capture is active the session shall expose a recording state that is observable
+  both in the interface and in the note stream.
+
+  Verdict: Host work
+
+  Owner: the application, which holds the state; the interface half is R6.15 and the stream half is
+  the `session` lifecycle record of §5.2. The requirement is what makes unattended recording
+  detectable by the person being recorded: a session whose only evidence is its output file is
+  indistinguishable from no session while it runs.
+
+- **R1.18** The captured source shall be selected from platform-enumerated objects, and no
+  free-form string shall identify a source.
+
+  Verdict: Host work
+
+  Owner: the application, over the enumeration host platform code provides — a monitor index, a
+  window handle, a portal stream serial (§1.2). The route argument then carries that identifier;
+  what the platform reports as a window's title is display text for the user's choice and never the
+  identity carried forward.
+
+- **R1.19** No untrusted value shall be interpolated into a route argument, and a value carrying
+  the route's own delimiters or metacharacters shall be rejected rather than escaped.
+
+  Verdict: Host work
+
+  Owner: the application's route-argument builder. The pipeline-string route's argument is parsed
+  by the media framework itself when it is neither a valid URI nor an existing file
+  [modules/videoio/src/cap_gstreamer.cpp:1432,1438], and the environment-mediated route's options
+  are parsed as pairs separated by `";"` and `"|"`
+  [modules/videoio/src/cap_ffmpeg_impl.hpp:1197] read from one variable
+  [modules/videoio/src/cap_ffmpeg_impl.hpp:1184] — so in both cases the string decides what is
+  instantiated. Rejection is specified in preference to escaping because an escaping rule
+  duplicates the parser it feeds, and a rejected source fails the start explicitly (R1.7).
+
+- **R1.20** The elements and properties a route argument may name shall be drawn from an allowlist
+  the application holds.
+
+  Verdict: Host work
+
+  Owner: the application. A route argument is assembled from the allowlist plus the enumerated
+  source identifier of R1.18 and from nothing else, which bounds the set of components a session
+  can instantiate to a set the application chose. The pipeline route additionally has to satisfy
+  the sink-naming condition of R1.6 [modules/videoio/src/cap_gstreamer.cpp:1343], so the allowlist
+  is what a valid argument is built from rather than a filter applied to an arbitrary one.
+
 # 2. Event Correlation Model
 
 A note that says the screen changed is worth little; a note that says the screen changed *because
@@ -396,14 +528,84 @@ are documented to work only while at least one window exists and is active
 Declaring the input stream external fixes its verdict; it does not reduce what this section owes.
 An external component producing events nobody can align with frames is useless, so the contract
 that makes such a stream consumable is specified here rather than deferred to whoever writes the
-hook.
+hook. That contract has three parts: what an event record carries, what coordinate space its
+positions are in, and how an event is paired with a frame. The first two are below; pairing belongs
+with the rules that consume it and is fixed in §4.4.
+
+**One record kind, two origins.** The format carries the whole input side of the timeline under one
+record kind, and an `input` record's required `origin` field says which half of it the record is
+(§5.2). `origin` of `os_hook` is an operating-system keyboard or pointer event supplied by the
+external capture component — the stream this section specifies. `origin` of `annotation` is one
+revision of one user annotation, produced by the application rather than by the platform, and its
+fields and semantics are fixed in §5.10. The two halves are mutually exclusive: whichever one
+`origin` does not select is written `null` throughout. Everything below about payloads, coordinates
+and correlation concerns the `os_hook` half, and so does the aggregation of §4.4, whose rules read
+`input` records with `origin` of `os_hook` and no others. What the two halves share is exactly the
+ordering contract — one clock, one sequence number and one kind rank (§2.2, §2.3) — which is why an
+annotation revision belongs in this stream rather than in an artefact of its own.
+
+**The payload, by event type.** An `input` record with `origin` of `os_hook` carries an
+`event_type` of exactly one of six values, and each fixes the payload fields that follow it.
+Positions obey the coordinate rules below; the minimisation and redaction rules of R2.11 and R2.12
+apply to every payload before it is written, and are the reason this list is a maximum rather than
+a mandate.
+
+| `event_type` | Payload fields |
+|---|---|
+| `key_down` | `key_class`, the class of key pressed; `key`, the character or key identifier, subject to R2.11; `modifiers`, the set of modifier keys held; `repeat`, whether the platform reported this as an auto-repeat. |
+| `key_up` | `key_class`, `key` subject to R2.11, and `modifiers`. |
+| `pointer_down` | `button`, which button went down; `position` and `position_normalised`; `modifiers`. |
+| `pointer_up` | `button`, `position`, `position_normalised`, `modifiers`. |
+| `pointer_move` | `position`, `position_normalised`, and `buttons`, the set of buttons held during the move. |
+| `scroll` | `axis`, `delta`, `position`, `position_normalised`, `modifiers`. |
+
+**The coordinate space.** A pointer position is recorded in the captured surface's own pixel
+coordinate space, **after the same crop and downscale transform that was applied to the frames**,
+with its origin at the captured surface's top-left corner. The transform is one documented function
+the application owns and applies to both streams — the frame it retains and the event position it
+records — because a position computed under a different transform from the frame it is compared
+against cannot be tested against that frame's changed regions at all. Where a deployment enables
+the optional downscale of §3.3, that downscale is part of the transform for both streams.
+
+Each position is recorded twice: as that integer pixel pair, and as `position_normalised`, a
+fractional pair on the closed unit interval from zero to one relative to the captured surface's
+width and height. The normalised form is what a consumer needs when it has no knowledge of the
+display's scaling, the platform's device-pixel ratio or the crop that was in force, and it stays
+meaningful when the same session is reviewed on another machine. Both forms are recorded because
+each is lossy in the other's direction: the pixel pair is exact against the retained frame, and the
+normalised pair is portable across resolutions.
+
+Where the platform reports which surface an event occurred over, that identity is recorded on the
+record and normalised as R2.10 requires, so a consumer can tell an event over the captured surface
+from one elsewhere; positions from an event over another surface are recorded as the platform gave
+them and are not projected into the captured surface's space.
+
+**What the payload must not carry.** A stream of every key a user pressed is a stream of their
+passwords, and this specification is the place that says so rather than the place that discovers it
+later. Two rules bound the payload, and both are requirements (R2.11, R2.12).
+
+Key content is excluded where the platform marks the field being typed into as secure or
+password-bearing: the record is written, with its type, its timing and its `key_class`, and the
+`key` field carries no character. Where the platform reports no such marking the default is still
+not to record the character — the record carries the key's class, so that a timeline can say a user
+typed rather than what they typed, and the character is recorded only where the user has explicitly
+opted in for that session. Redaction is the default because a screen-capture session cannot know
+which field a keystroke landed in on every platform, and a default that records everything is
+irreversible once written: nothing downstream can recover a note stream that already contains a
+password.
+
+Pointer payloads are limited to what the correlation of this section actually consumes — the event
+type, the button or axis, the position in both forms above, and the modifiers. A pointer event is
+not an occasion to record the contents of the window under the cursor, the text near it, or any
+other opportunistically available context, because none of that is an input to the merge, the
+pairing rule of §4.4 or any requirement in this specification.
 
 ## 2.2 The session clock
 
-Every record of either kind carries two ordering values: a monotonic time value read from a single
-clock owned by the session, and a monotonically increasing sequence number unique within the
-session. One clock, not one per stream — two clocks would make the merge a synchronisation problem
-instead of a sort.
+Every record, of every kind the format defines (§5.2), carries two ordering values: a monotonic
+time value read from a single clock owned by the session, and a monotonically increasing sequence
+number unique within the session. One clock, not one per stream — two clocks would make the merge a
+synchronisation problem instead of a sort.
 
 Civil time is recorded alongside, as a presentation anchor only. It is what a reader sees when the
 timeline says a session ran on a particular afternoon, and it is never an ordering key: wall-clock
@@ -411,20 +613,71 @@ time can move backward under adjustment, and a timeline that reorders itself und
 correction is worse than one whose resolution is coarse. The facility the application reads to
 obtain either value is not provided by the in-scope modules, and none outside them is named here.
 
+"Monotonic time" is a description rather than a representation, and a description is not something
+two implementations can serialise the same way, so the representation is fixed here and repeated in
+the field table of §5.3. The value is an **integer count of nanoseconds elapsed since the session
+clock's zero point**, the zero point being the instant stamped on the session's `start` record — so
+that record carries `t_mono` of `0` and no record carries less. It is a signed 64-bit
+integer, and a signed 64-bit nanosecond count exhausts its range only after centuries of continuous
+elapsed time, so no session can overflow it. Within a session the value is monotonically
+non-decreasing: two records may share a value, which is exactly the case §2.3's ordering resolves,
+and no record may carry a value smaller than one already stamped. The resolution of the underlying
+clock is whatever the host provides and **this specification asserts no resolution**, because the
+facility that supplies it is outside the surveyed modules and no figure for it could be sourced from
+this tree. Values are meaningful only within one session and are not comparable across sessions,
+because each session's zero point is its own.
+
 ## 2.3 The merge rule
 
-Merged order is a total order over the records of one session, defined on three keys:
+Merged order is the ascending **lexicographic comparison of the triple (`t_mono`, kind rank,
+`event_id`)** over the records of one session. Two records are compared on `t_mono` first; where
+those are equal, on kind rank; where those are equal too, on `event_id`. Nothing else enters the
+comparison, and in particular `timestamp_utc` never does (§2.2).
 
-1. Ascending monotonic time.
-2. At equal monotonic time, kind precedence: an `input` record sorts before a `frame` record.
-3. At equal monotonic time and equal kind, ascending sequence number.
+The kind rank is a total function over every record kind the format defines (§5.2), so no pair of
+records can fall outside it:
 
-The second key is the one that carries meaning rather than mechanism. An input event and the frame
-showing its effect can be stamped with the same time value at any clock resolution, and reading the
-frame first would invert cause and effect for every consumer downstream. Ranking input first
-resolves that in the format instead of leaving each consumer to guess. The third key makes the
-order total, because the sequence number is unique within the session; equal-time pairs of any
-other kinds fall through to it.
+| Rank | Record | Why the rank sits there |
+|---|---|---|
+| 0 | `session` with lifecycle `start` | A session's start precedes everything stamped at its instant; it is the record that fixes the clock's zero point. |
+| 1 | `input` with `origin` `os_hook` | An operating-system input event precedes the frame that shows its effect, so cause is never read after effect. |
+| 1 | `input` with `origin` `annotation` | An annotation revision takes the same rank as the other origin of its kind. That is a placement rather than a causal claim: a revision is not something that changed the captured surface, and it binds to its frame by `target` rather than by adjacency (§5.10). |
+| 2 | `frame` | The frame is the observation an input event explains, and the thing segment boundaries and annotation revisions refer to. |
+| 3 | `segment` | A segment boundary is derived from the admitted frames it delimits, so it follows them at equal time. |
+| 4 | `session` with lifecycle `end` | A session's end follows everything stamped at its instant, which is what makes a stream's last record readable as its last event. |
+
+Two properties of this definition are the reason it is stated as a triple rather than as a list of
+special cases. It is **total**: the third component is unique within the session (R2.4), so no two
+distinct records compare equal and every pair is ordered. And it is **transitive**, because
+lexicographic comparison of a fixed-length tuple of totally ordered components is transitive by
+construction. The alternative formulation that suggests itself — order by `event_id` at equal time,
+except that an `input` record always precedes a `frame` record — is not transitive and must not be
+implemented: an `input` record can precede a `frame` record by the override while that frame
+precedes a `segment` record by `event_id` and that segment precedes the same input record by
+`event_id`, which is a cycle rather than an order. Ranking every record variant removes the
+possibility.
+
+The rank function's domain is worth stating exactly, because an implementer has to reproduce it. It
+is a deterministic total function of the record's `kind` and, for the two kinds that have variants,
+of that kind's own discriminator: `lifecycle` for a `session` record, which is why a start and an
+end sit at opposite ends of the scale, and `origin` for an `input` record, whose two origins are
+placed together at rank 1. Written out, it is exactly the six rows of the table above and the five
+rank values they carry, and nothing else. Consulting a second schema field costs the order nothing:
+the rank remains a deterministic value computed from fields the record carries, so the comparison
+remains a lexicographic one over a fixed-length tuple and stays total and transitive.
+
+The placement of the two `input` origins together has one consequence this section states rather
+than leaving an implementer to meet it in a stream. Because an annotation revision is an `input`
+record (§5.10), at equal `t_mono` it orders against another `input` record of either origin by
+`event_id`, and against a `frame` record by rank — which places it, like an `os_hook` record,
+before that frame. So a revision stamped at the same instant as the frame it targets sorts before
+that frame rather than after it. That is harmless: an annotation is bound to its frame by the
+`target` field carrying that frame's `event_id`, so a consumer resolves the binding by reading a
+field and never by inspecting which line sits beside which. A distinct rank for the `annotation`
+origin was available and is declined — `origin` is a schema field and a rank derived from it would
+be just as total and just as transitive — because the binding a consumer needs is already carried
+by `target`, and a fourth rank boundary would add a rule to the ordering contract without adding
+anything a reader could do with it.
 
 ## 2.4 Stamping, and what threads change
 
@@ -478,25 +731,30 @@ flowchart TB
     CAP["Frame delivery<br/>grab then retrieve"]
   end
   CLK["Session clock and sequence<br/>one clock, owned by the session"]
-  HOOK --> SI["Stamp at acquisition<br/>t_mono, event_id, kind=input"]
-  CAP --> SF["Stamp at acquisition<br/>t_mono, event_id, kind=frame"]
+  HOOK --> SI["Record created: kind=input, origin=os_hook<br/>stamped at acquisition with t_mono, event_id<br/>timestamp_utc attached here<br/>NOTE: presentation only, excluded from ordering"]
+  CAP --> SF["Record created: kind=frame<br/>stamped at acquisition with t_mono, event_id<br/>timestamp_utc attached here<br/>NOTE: presentation only, excluded from ordering"]
   CLK --> SI
   CLK --> SF
   SI --> CMP{"Compare t_mono"}
   SF --> CMP
   CMP -->|"t_mono differs"| ORD["Ascending t_mono"]
-  CMP -->|"t_mono equal"| TIE{"Same kind?"}
-  TIE -->|"different kinds:<br/>input before frame"| ORD
-  TIE -->|"same kind:<br/>ascending event_id"| ORD
-  ORD --> TL["Merged timeline"]
-  TL --> PRES["Presentation only:<br/>timestamp_utc attached here"]
+  CMP -->|"t_mono equal"| RANK{"Compare kind rank<br/>session start 0, input 1,<br/>frame 2, segment 3, session end 4"}
+  RANK -->|"ranks differ"| ORD
+  RANK -->|"ranks equal"| SEQ["Ascending event_id<br/>unique in the session"]
+  SEQ --> ORD
+  ORD --> TL["Merged timeline<br/>total order on the triple<br/>t_mono, kind rank, event_id"]
 ```
 
 Read unrendered, its conclusion is this: the input stream originates outside the library and the
 frame stream inside it, but both are stamped at acquisition from one session clock, so the merge is
-a sort rather than a synchronisation; ordering consults `t_mono` first, kind precedence second and
-`event_id` third; and civil time enters only at the presentation edge, where nothing depends on
-it.
+a sort rather than a synchronisation; civil time is attached where each record is created, at the
+same moment as the ordering values, and is excluded from the comparison rather than added at the
+end of it; and ordering compares `t_mono` first, the complete four-kind rank of §2.3 second — not
+an input-before-frame special case, which would leave equal-time pairs of other kinds unordered —
+and the session-unique `event_id` third, which is what makes the result a total order. The `input`
+records drawn here are the `os_hook` origin of §2.1; an annotation revision is an `input` record of
+the other origin (§5.10), stamped from the same clock and ranked at the same 1, so it enters this
+merge by exactly the path the diagram shows.
 
 
 ## 2.7 Requirements
@@ -527,7 +785,8 @@ it.
   appears. The absence is of the in-scope modules and is stated at that width.
 
 - **R2.3** Every record shall carry a monotonic time value read from one clock owned by the
-  session.
+  session, serialised as the signed 64-bit nanosecond count from the session clock's zero point
+  defined in §2.2.
 
   Verdict: Host work
 
@@ -535,7 +794,10 @@ it.
   facility it reads is not provided by the in-scope modules, and none outside them is named here.
   One back-end-specific property anchors a session in civil time
   [modules/videoio/include/opencv2/videoio.hpp:189] but anchors no frame, so it cannot serve as
-  this value.
+  this value. The representation is part of the requirement rather than an implementation detail:
+  the zero point is the instant on the session's `start` record, the count is non-decreasing within
+  a session and not comparable across sessions, and the clock's resolution is the host's and is not
+  asserted anywhere in this specification.
 
 - **R2.4** Every record shall carry a sequence number that increases monotonically within the
   session and is unique in it.
@@ -554,14 +816,18 @@ it.
   that sorts by civil time satisfies the field and violates the requirement, because that value can
   move backward under adjustment.
 
-- **R2.6** The merged timeline shall be ordered by ascending monotonic time, with an input record
-  before a frame record at equal time and the sequence number resolving the remainder.
+- **R2.6** The merged timeline shall be ordered by ascending lexicographic comparison of the triple
+  (`t_mono`, kind rank, `event_id`), over the complete kind-rank function of §2.3.
 
   Verdict: Host work
 
-  Owner: the application's timeline reader, and any consumer of the note stream. The three-key
-  order is specified in §2.3 and is a property of the format rather than of an implementation, so
-  two consumers reading the same stream produce the same timeline.
+  Owner: the application's timeline reader, and any consumer of the note stream. The triple and its
+  rank function are specified in §2.3 and are a property of the format rather than of an
+  implementation, so two consumers reading the same stream produce the same timeline. The order is
+  total because `event_id` is unique in the session (R2.4) and transitive because the comparison is
+  lexicographic over a fixed triple; an implementation that overrides the sequence number for one
+  pair of kinds instead of ranking all of them does not satisfy this requirement, because that
+  formulation admits cycles (§2.3).
 
 - **R2.7** Records produced on different threads shall be stamped at acquisition and serialised
   into one stream by a single writer.
@@ -597,15 +863,37 @@ it.
   only where that back-end serves the chosen route (R1.6), and its absence is normal rather than an
   error. It is never an ordering key and never substitutes for the session clock of R2.3.
 
-- **R2.10** An input record shall carry the identity of the surface the event occurred over, where
-  the platform makes it known.
+- **R2.10** An `input` record with `origin` of `os_hook` shall carry the identity of the surface the
+  event occurred over, where the platform makes it known.
 
   Verdict: Host work
 
   Owner: host platform code reports it and the application normalises it to the same source
   identity a frame record carries (§5), so a consumer can tell an event over the captured surface
-  from one elsewhere. Where the platform does not report it, the field is absent and the record is
-  still valid.
+  from one elsewhere. Where the platform does not report it, the `source` field carries JSON `null`
+  (§5.5) and the record is still valid.
+
+- **R2.11** Key content shall be excluded from an input record where the platform marks the field
+  as secure or password-bearing, and redacted by default otherwise, the record carrying the key's
+  class rather than the character unless the user has opted in for that session.
+
+  Verdict: Host work
+
+  Owner: host platform code reports the secure-field marking where the platform has one, and the
+  application's writer applies the redaction before a record is serialised. The default is
+  restrictive because the alternative is irreversible: a character written into the stream cannot be
+  unwritten by any later policy, and no consumer can distinguish a password from any other word.
+  The record itself is still written, so the timeline keeps the event and loses only its content.
+
+- **R2.12** A pointer input record shall carry only the fields the correlation of §2 and the
+  aggregation of §4.4 consume.
+
+  Verdict: Host work
+
+  Owner: the application's writer. The payload set is fixed in §2.1 — type, button or axis,
+  position in both forms, modifiers — and nothing about the surroundings of the pointer is
+  collected, because no requirement in this specification reads it and data collected without a
+  consumer is exposure without a purpose.
 
 
 # 3. Change Detection & Segmentation
@@ -879,8 +1167,8 @@ identity of that dependency is named in
 
 ## 4.3 What inference supplies
 
-The frame-to-prediction path is complete and unconditional in the sense that matters: given a model
-asset, nothing else is missing. A network is constructed by one of the readers
+The **inference plumbing** is complete: everything between a frame and a network's output exists as
+public API and the application writes none of it. A network is constructed by one of the readers
 [modules/dnn/include/opencv2/dnn/dnn.hpp:1121,1134,1161,1169,1201,1217,1261,1281], input names and
 shapes are declarable [modules/dnn/include/opencv2/dnn/dnn.hpp:714,718], a frame becomes network
 input through the blob helpers
@@ -890,32 +1178,90 @@ itself [modules/dnn/include/opencv2/dnn/dnn.hpp:566]. Two high-level wrappers co
 classification [modules/dnn/include/opencv2/dnn/dnn.hpp:1656,1697,1700] and object detection
 [modules/dnn/include/opencv2/dnn/dnn.hpp:1772,1814].
 
+Complete plumbing is not a complete extraction stage, and the difference is a list rather than a
+caveat. Every one of the following is caller-supplied, and each is a separate thing to obtain,
+license, package and validate:
+
+- **Model weights**, for every network the session runs — a detector, a recogniser, and any
+  classifier or object detector §4.6 adds.
+- **A companion configuration file for the formats that take one.** The general reader accepts a
+  model path and a configuration path [modules/dnn/include/opencv2/dnn/dnn.hpp:1201], and each
+  wrapper's path constructor forwards both [modules/dnn/include/opencv2/dnn/dnn.hpp:1847,2063], so
+  a deployment whose format needs a configuration file needs that file as well as the weights.
+- **A character vocabulary and a decode type, for recognition.** The vocabulary is set on the
+  recogniser [modules/dnn/include/opencv2/dnn/dnn.hpp:1880] and the decode type selects between the
+  two documented decoding methods [modules/dnn/include/opencv2/dnn/dnn.hpp:1857]. Neither has a
+  value until the caller supplies one, and recognition without both is not configured.
+- **A label set or taxonomy that means something to this use case**, for classification and
+  detection. Classification returns a class index and a score
+  [modules/dnn/include/opencv2/dnn/dnn.hpp:1697,1700] and detection returns class indexes with
+  their boxes and confidences [modules/dnn/include/opencv2/dnn/dnn.hpp:1814-1816]; what an index
+  *means* is not in the API, so the mapping from index to a name a note can carry is the caller's,
+  and for screen content no such taxonomy exists in this tree (§4.4, Route 3).
+- **Detector thresholds where the subclass exposes them.** The two detector families each expose
+  their own [modules/dnn/include/opencv2/dnn/dnn.hpp:2010,2023] and
+  [modules/dnn/include/opencv2/dnn/dnn.hpp:2066,2069], and the detection call takes confidence and
+  suppression thresholds as parameters
+  [modules/dnn/include/opencv2/dnn/dnn.hpp:1814-1816]. Their values are a tuning decision against
+  the chosen weights and the actual screen content, and this specification supplies none.
+
+So the accurate statement is that no *code* is missing between a frame and a prediction, and that
+several *inputs* are — and that the per-string recognition confidence of §4.1 is missing from the
+API itself rather than from the caller's inputs, which is why it stays R4.3's work no matter what
+assets are supplied.
+
 ## 4.4 Actions: three routes, kept strictly separate
 
-**Route 1 — directly observed actions.** A click is a click because the input-event stream of §2
-says so. This is the primary route, it requires no model, and its input is the external hook R2.1
-assigns to host platform code. Inferring a click or a keystroke from visual change geometry cannot
-represent it: a click is an event with a button, a position and an instant, while a difference
-image shows only that pixels near a location changed. The events are what the application is
-required to capture and correlate, which is why this route is first and not a fallback.
+**Route 1 — directly observed actions.** A click is a click because the operating-system half of
+the input stream of §2 — its `input` records with `origin` of `os_hook` (§2.1) — says so. This is
+the primary route, it requires no model, and its input is the external hook R2.1 assigns to host
+platform code. Inferring a click or a keystroke from visual change geometry cannot represent it: a
+click is an event with a button, a position and an instant, while a difference image shows only
+that pixels near a location changed. The events are what the application is required to capture and
+correlate, which is why this route is first and not a fallback.
 
 **Route 2 — deterministic aggregation.** Higher-level actions are composed from those events plus
-the segment geometry and duration of §3. The taxonomy is enumerated, closed, and rule-defined:
+the segment geometry and duration of §3. Every rule below reads `input` records whose `origin` is
+`os_hook` and no others: the annotation revisions that share that kind (§2.1, §5.10) are the
+application's own editing history rather than something the user did to the captured surface, so
+they neither produce an aggregated action nor suppress one. The taxonomy is enumerated, closed, and
+rule-defined:
 
 | Aggregated action | Rule |
 |---|---|
-| `click` | A pointer-down and a matching pointer-up at the same position, no intervening pointer-down. |
-| `drag` | A pointer-down, one or more pointer-moves, and a pointer-up at a different position. |
-| `scroll` | One or more wheel events in a single direction with no intervening button event. |
-| `key_sequence` | A run of key events with no intervening pointer button event. |
-| `caused_change` | An input event followed, within the same segment, by an admitted frame whose changed regions include the event's position. |
-| `unattended_change` | A segment containing admitted frames and no input event at all. |
+| `click` | A `pointer_down` and a matching `pointer_up` at the same position, with no intervening `pointer_down`. |
+| `drag` | A `pointer_down`, one or more `pointer_move` events, and a `pointer_up` at a different position. |
+| `scroll` | One or more `scroll` events on one axis in a single direction, with no intervening button event. |
+| `key_sequence` | A run of `key_down` and `key_up` events with no intervening pointer button event. |
+| `caused_change` | An input event paired with an admitted frame by the rule below (required), that frame's changed regions containing the event's position (corroborating). |
+| `unattended_change` | A segment containing admitted frames and no `os_hook` input event at all. |
 
-Its confidence is **a rule-satisfaction indicator and not a probability**: `complete` where every
-clause of the rule held, and `partial` where the required clauses held but a corroborating clause
-did not — a `caused_change` whose region overlap could not be evaluated because the frame's regions
-were not computed, for instance. It carries no distribution, must not be thresholded as though it
-did, and is inspectable precisely because it is a record of which clauses fired.
+**Pairing an event with a frame.** An `os_hook` input event pairs with **the first admitted frame
+whose `t_mono` is greater than or equal to the event's**, and with no other; the pairing is
+therefore deterministic where a segment holds many events and many frames, because each event
+resolves independently and always forward in time. The search is bounded by a configurable **pairing
+window** (§5.9): a frame beyond that window from the event is not a candidate. Where no admitted
+frame falls in the window the event pairs with none, and the aggregation records that fact — the
+event is retained with no `caused_change` derived from it, rather than being silently dropped or
+attached to a distant frame. The window is configurable because it depends on the capture rate the
+deployment chose (§1.4), and its value is a product decision this specification does not supply.
+
+**Which clauses are required, and which corroborate.** Temporal pairing is **required**: without a
+paired frame there is no `caused_change` to report. Spatial containment — the paired frame's
+changed regions including the event's position, in the shared coordinate space of §2.1 — is
+**corroborating**: it strengthens the inference where it can be evaluated and its absence does not
+withdraw the pairing.
+
+That division is what makes the confidence coherent. Its confidence is **a rule-satisfaction
+indicator and not a probability**: `complete` where every clause of the rule held, including the
+corroborating ones, and `partial` where every required clause held while a corroborating clause
+could not be evaluated — a `caused_change` whose region overlap was never computed because the
+deployment does not derive regions from the difference image (§3.4), for instance. A clause that
+was evaluated and *failed* does not yield `partial`: a required clause failing means the action is
+not reported at all, and a corroborating clause failing means the same, because a position outside
+every changed region is evidence against the causal reading rather than a missing measurement. The
+indicator carries no distribution, must not be thresholded as though it did, and is inspectable
+precisely because it is a record of which clauses fired.
 
 **Route 3 — learned visual classification.** Optional, and separate. Its three prerequisites are an
 enumerated action taxonomy for the target domain, a model trained for it, and labelled screen
@@ -1015,10 +1361,15 @@ not run" and "extraction ran and found nothing" remain different facts.
 
   Verdict: Host work
 
-  Owner: the application's aggregator. The taxonomy, its six rules and its two-valued
-  rule-satisfaction indicator are fixed by §4.4; the indicator is not a probability and is not to
-  be thresholded as one. No model and no training data are involved, and every decision is
-  inspectable.
+  Owner: the application's aggregator. The events it reads are the `os_hook` origin of §2.1 and no
+  others, so the annotation revisions sharing that record kind (§5.10) neither produce an
+  aggregated action nor suppress one. The taxonomy, its six rules, the event-to-frame pairing rule
+  with its configurable window, the division of each rule into required and corroborating clauses,
+  and the two-valued rule-satisfaction indicator are all fixed by §4.4; the indicator is not a
+  probability and is not to be thresholded as one. The event payload and the shared coordinate
+  space the spatial clause is evaluated in are fixed by §2.1, and an aggregator that compared a
+  position against a frame transformed differently would be comparing two coordinate spaces. No
+  model and no training data are involved, and every decision is inspectable.
 
 - **R4.9** Learned visual classification of user actions from frames alone.
 
@@ -1066,10 +1417,18 @@ four values, and the fields following the common set depend on it.
 
 | `kind` | What it records | Kind-specific fields |
 |---|---|---|
-| `frame` | An admitted frame (§3) | `change_score`, `screenshot_ref`, `extraction`, and the media presentation timestamp where available |
-| `input` | An operating-system keyboard or pointer event, supplied by the external capture component (§2) | `event_type` and its payload; the surface identity where the platform reports it |
+| `frame` | An admitted frame (§3) | `change_score`, `screenshot_ref` with its integrity metadata where an image was retained (§5.6), `extraction`, and the media presentation timestamp where available |
+| `input` | An event on the input side of the timeline, of one of the two origins of §2.1: an operating-system keyboard or pointer event supplied by the external capture component, or one revision of one user annotation produced by the application (§5.10) | `origin`, one of `os_hook` or `annotation`, which selects the rest. On `os_hook`: `event_type` and the payload that type defines (§2.1), the surface identity where the platform reports it, and a `null` `annotation` object. On `annotation`: the `annotation` object of §5.10, with `event_type`, its payload and the surface identity all `null` |
 | `segment` | A segment boundary (§3.5) | `boundary`, one of `start` or `end` |
-| `session` | Session lifecycle (§1.1) | `lifecycle`, one of `start` or `end`; the source and configuration in effect on `start` |
+| `session` | Session lifecycle (§1.1) | `lifecycle`, one of `start` or `end`; on `start`, the source and the configuration in effect, including the requested, backend-reported and observed capture values of §1.4 |
+
+The set is closed at four, and `schema_version` stays `1` because this is still the first published
+schema. The annotation revisions of §5.10 are carried inside the `input` kind by its `origin`
+discriminator rather than by a kind of their own, so the taxonomy names every record this
+specification requires without being extended. The two halves of an `input` record are mutually
+exclusive: whichever half `origin` does not select is written as `null` throughout, per the
+unconditional-presence rule of §5.3. A consumer therefore switches on `kind`, and for `input` on
+`origin`, and is never left guessing which fields a record carries.
 
 Exactly one `session` record with lifecycle `end` is written per session, by the first successful
 stop; later stops write none. That is what makes stop idempotent (R1.4) without permitting two ends
@@ -1077,26 +1436,36 @@ in one stream, and it is a property of the writer rather than of the reader.
 
 ## 5.3 Fields common to every record, in fixed order
 
+All seven fields are present on **every** record of every kind. Where a record has no value for one
+of them the field is still written, carrying JSON `null`; a field is never omitted, so a consumer
+reads a fixed head on every line and never has to distinguish "absent" from "empty".
+
 | Field | Type | Meaning |
 |---|---|---|
 | `schema_version` | integer | Value `1`. An integer because the only operations on it are equality and ordering tests. |
 | `kind` | string | One of the four values of §5.2. |
 | `event_id` | integer | The per-session sequence number of R2.4, monotonically increasing and unique in the session. |
-| `session_id` | string | Opaque, stable for the session's lifetime. |
-| `t_mono` | monotonic time | The session-clock value of R2.3. The ordering key. |
-| `timestamp_utc` | string | ISO 8601 with an explicit offset. Presentation only (R2.5). |
-| `source` | string | The normalised source identity of §5.5, on records that have one. |
+| `session_id` | string | Stable for the session's lifetime, and restricted to the character set and length of R5.21 because it is also a path component. |
+| `t_mono` | integer | The session-clock value of R2.3: nanoseconds elapsed since the session clock's zero point, signed 64-bit, non-decreasing within the session, not comparable across sessions, resolution as the host provides and not asserted here (§2.2). The first ordering key. |
+| `timestamp_utc` | string | ISO 8601 with an explicit offset. Presentation only, and never an ordering key (R2.5). |
+| `source` | string \| null | The normalised source identity of §5.5 where the record has one, and JSON `null` where it does not. |
 
 The order is fixed rather than free so that records diff readably: two lines describing similar
 events differ in their tails, not in the arrangement of their heads. Kind-specific fields follow
-the common set.
+the common set, in the arrangement §5.2 fixes for each kind. One of them is itself a discriminator:
+on a record of kind `input` the first kind-specific field is `origin`, one of `os_hook` or
+`annotation`, and it selects which of that kind's two halves carries values and which is written
+`null` (§5.2, §5.10).
 
 ## 5.4 Ordering, restated where it is enforced
 
-Ordering is by `t_mono`, never by `timestamp_utc`. At equal `t_mono` an `input` record precedes a
-`frame` record, and the remainder is resolved by `event_id` — the three-key order of §2.3. Records
-are stamped at acquisition rather than at writing (§2.4), which is why the file's line order and
-the timeline's order can differ and why a consumer sorts rather than trusting arrival order.
+Ordering is the ascending lexicographic comparison of the triple (`t_mono`, kind rank, `event_id`)
+defined in §2.3, over that section's complete rank function — `session`/`start` 0, `input` 1,
+`frame` 2, `segment` 3, `session`/`end` 4. The rank is a deterministic function of `kind` and, where
+a kind has variants, of that kind's discriminator — `lifecycle` on a `session` record, `origin` on
+an `input` record, whose two origins are placed together at rank 1. It is never by `timestamp_utc`. Records are stamped at
+acquisition rather than at writing (§2.4), which is why the file's line order and the timeline's
+order can differ and why a consumer sorts rather than trusting arrival order.
 
 Where a back-end supplies a media presentation timestamp
 [modules/videoio/include/opencv2/videoio.hpp:205] it is recorded on `frame` records as
@@ -1112,17 +1481,59 @@ those encodings are what the application maps *from*; what a record carries is t
 The reason is R1.8: a fallback that changed the recorded source identity would make one session
 look like two surfaces to every consumer, which is worse than having no fallback at all.
 
+The field is present on every record and nullable, per §5.3. A `frame` record always carries the
+identity of the surface it was captured from. An `input` record's value follows its `origin`: with
+`origin` of `os_hook` it carries the identity of the surface the event occurred over where the
+platform reports it (R2.10) and JSON `null` where it does not, and with `origin` of `annotation` it
+carries `null` always — an annotation revision is not an observation of a surface, and the surface
+it concerns is the one named on the `frame` record its `target` points at (§5.10), so recording an
+identity here would be a second place for the same fact to disagree with itself. And a record whose
+subject is the session or the stream rather than a surface — a `session` lifecycle record, a
+`segment` boundary — carries `null`. Writing `null` rather than omitting the field is what keeps a
+consumer from having to treat a missing key and an unknown surface as two different states, when
+they are one.
+
 ## 5.6 Screenshots: addressing and lifecycle
 
 Retained images are stored as files beside the note stream, not embedded in it. Embedding encoded
-bytes in a line-delimited record inflates the stream by orders of magnitude and destroys the
-readability that made the format worth choosing.
+bytes in a line-delimited record substantially enlarges every record that carries an image and
+destroys the line readability that made the format worth choosing; how much larger depends on the
+frame's dimensions, the encoding and the content, and this specification puts no figure on it
+because none is derivable from anything it cites.
 
 The name is `<session_id>/<event_id>.<ext>`, which makes the reference derivable from the record
 itself and removes the need for a separate index — one fewer artefact to keep consistent with the
-stream. Two states are explicitly not errors: a `screenshot_ref` of null means no image was
-retained for that frame, and a reference that resolves to no file means the image was deleted under
-the retention policy. A consumer treats both as "image not available" and neither as corruption.
+stream. Both components of that name are constrained rather than free: `session_id` is drawn from
+the bounded character set of R5.21 and `event_id` is an integer, so the reference is a name and
+never a path expression.
+
+The lifecycle states are three, and the distinction between the second and the third is the one an
+implementer is most likely to collapse:
+
+- **`screenshot_ref` is `null`.** No image was retained for that frame — because retention was
+  disabled, because the policy excluded it, or because the frame was admitted without an image
+  being wanted. This is a positive statement of absence and not an error.
+- **`screenshot_ref` is non-null and resolves.** The record additionally carries
+  `screenshot_sha256`, the lower-case hexadecimal digest of the stored bytes, and
+  `screenshot_bytes`, their integer length. A consumer that resolves the reference and finds a
+  different digest or length has an image that is *not* the one the record describes — a
+  resolving-but-altered image is detectable, which it is not from a reference alone.
+- **`screenshot_ref` is non-null and does not resolve.** The image is **not available**, and the
+  format establishes nothing about why. A failed write, an interrupted flush, an accidental
+  deletion, a relocated or unmounted directory, a corrupted file and a deliberate deletion under
+  the retention policy are indistinguishable from the stream, so a consumer must not read a
+  dangling reference as a policy deletion. It reports the image as unavailable and stops there;
+  neither this state nor the first is corruption of the stream.
+
+Deletion under the retention policy is therefore **recorded, never inferred**: when the application
+deletes a retained image it writes a retention audit record naming the reference it removed — the
+`session_id` and `event_id` the name was built from — the policy that required the removal, and the
+civil time it happened (R5.23). That record is the application's own artefact, written to its
+retention audit log beside the note stream rather than into it, because deletion happens after the
+session has ended and outside the clock and taxonomy this format defines: a record of this stream
+carries a session-clock value from a session that is over, and the `kind` set is closed at four
+(R5.3). What matters to a consumer is that the audit log is where a deliberate deletion is learned
+from, and that the dangling-reference state carries no such meaning on its own.
 
 Encoding an image and writing that file are host work. An image-encoding facility is not provided
 by the in-scope modules, and none outside them is named here.
@@ -1158,24 +1569,43 @@ promising more than the mechanism delivers.
 ## 5.9 What is configurable, and what is not
 
 Configurable: the change gate's per-pixel sensitivity and threshold, the quiet-frame count that
-closes a segment (§3.2), the retention policy for images, and whether extraction runs synchronously
-with admission.
+closes a segment (§3.2), the event-to-frame pairing window of §4.4, the retention policy for
+images, whether extraction runs synchronously with admission, the storage root the stream and the
+images are written under, and whether encryption at rest is enabled (§5.11).
 
-Not configurable: the record taxonomy, the common field set and its order, the clock and ordering
-rules, and the file-naming scheme. A consumer cannot be written against a configurable schema, and
-a format whose meaning depends on a deployment's settings is not a format.
+Not configurable: the record taxonomy — the four kinds of §5.2 and the `origin` discriminator that
+selects an `input` record's half — the common field set and its order, the clock and ordering rules,
+and the file-naming scheme. A consumer cannot be written against a configurable schema, and a
+format whose meaning depends on a deployment's settings is not a format.
 
 ## 5.10 Annotations are revisions in the same stream
 
 A user's annotations — a box drawn round a region, a line of text against a frame — are part of the
 note artefact, and they are editable, which means they need history. They get it from the format
-rather than from a new subsystem.
+rather than from a new subsystem, and from the four kinds of §5.2 rather than from a fifth.
 
 Each annotation has a stable identifier and is recorded as **append-only revision records in the
-same note stream**: a create record carrying the identifier with its initial geometry and text; an
-update record carrying the identifier and the changed fields only; a delete record carrying the
-identifier and a tombstone. The current state of an annotation is the fold of its revisions in
-`event_id` order.
+same note stream**. Those records are `input` records whose `origin` is `annotation` (§5.2): the
+application-produced half of the input side of the timeline, ordinary records of this stream rather
+than a second format smuggled into the first. On such a record the `os_hook` half is absent —
+`event_type`, its payload and the surface identity all carry `null` (§5.5) — and the revision
+travels in an `annotation` object which, beyond the seven common fields of §5.3, carries exactly
+four fields:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `annotation_id` | string | Stable for the annotation's lifetime and shared by all of its revisions. Restricted to the same character set and length as `session_id` (R5.21), so it is safe wherever an identifier is used to name something. |
+| `revision` | string | One of `create`, `update`, `delete`. |
+| `target` | integer | The `event_id` of the `frame` record the annotation is attached to, which is what binds an annotation to a moment in the timeline rather than to a wall-clock guess or to an adjacent line. |
+| payload | object \| null | On `create`, the annotation's initial geometry and text. On `update`, only the fields that changed. On `delete`, `null` — the tombstone is the `delete` revision itself, and carries neither geometry nor text. |
+
+The current state of an annotation is the **fold of its revisions in ascending `event_id` order** —
+its revisions being the `input` records carrying its `annotation_id` with `origin` of `annotation`:
+`create` establishes the initial value, each `update` overlays the fields it carries onto the
+value so far, and `delete` marks the annotation removed from that revision onward. Ordering the fold
+by `event_id` rather than by file position is what makes it deterministic, since `event_id` is
+unique and increasing within the session (R2.4) while line order is a property of the writer
+(§2.4).
 
 Two capabilities fall out of that definition rather than being built. Undo is reading one revision
 earlier — the fold stops short instead of a reverse operation being applied. Reopening a session
@@ -1183,7 +1613,56 @@ reconstructs every annotation deterministically, because the fold is a pure func
 History is therefore a property of the format, which is why it belongs in this section and not in
 one of its own.
 
-## 5.11 Requirements
+Embedding decides where these records sit and changes nothing about what they mean, and it leaves
+the rest of the specification where it was. Ordering is unaffected, because the rank function of
+§2.3 places both origins of the `input` kind at that kind's rank. Aggregation is
+unaffected, because the rules of §4.4 read `input` records whose `origin` is `os_hook` and no
+others, so an annotation revision is never read as something the user did to the captured surface.
+
+## 5.11 Protecting the artefact this format produces
+
+Everything above describes a readable, appendable, plain-text record of what a user's screen showed
+and what they typed, with images beside it. That is the point of the format and it is also its
+hazard: the artefact is more sensitive than anything the surveyed modules handle, and a
+specification that fixed the schema while leaving the storage unstated would be specifying the
+readable half of a leak. Five constraints therefore belong to the format rather than to a
+deployment's discretion.
+
+**Permissions are set when the file is created, not afterwards.** The note stream and the image
+directory are created accessible to the account that owns the session and to no other, and the
+permissions are applied at creation. Creating a file with default permissions and tightening them
+afterwards leaves a window in which the artefact was readable, and a window is all that is needed.
+
+**The storage root is configuration, and paths are built under it and checked against it.** The
+root is a configured value (§5.9); it is never derived from the content of a record. Because the
+image name of §5.6 embeds `session_id` as a directory component, that identifier is
+application-generated and restricted to `[A-Za-z0-9_-]{8,64}` — a bounded length over a character
+set that contains no path separator, no `.` and nothing a platform treats specially. An identifier
+that is merely "opaque" is not enough: a separator, a `..` component, an absolute prefix or a name
+a platform reserves would each turn a name into a path expression, and the format would be handing
+an attacker a write outside the storage root. Two further steps make that structural rather than
+hopeful: every path is built by a canonical join, and every path is checked **after resolution** to
+be inside the storage root, with anything failing that check refused rather than repaired. The same
+character constraint applies to `annotation_id` (§5.10), for the same reason.
+
+**Retention deletes explicitly and records what it deleted.** A retention policy that removes
+images leaves the stream referencing files that are gone, and §5.6 has already established that a
+dangling reference proves nothing. So the deletion is written: a retention audit record naming the
+reference removed, the policy that required it and the civil time of the removal, kept in the
+application's retention audit log beside the note stream rather than in it, for the reasons §5.6
+gives. This is the only way a consumer learns that an absence was intended.
+
+**Encryption at rest is a supported option, not an assumption.** The format is defined over
+plaintext lines and stays so; where a deployment requires encryption at rest the stream and the
+image directory are stored encrypted, and the schema is unchanged because a consumer reads the
+decrypted stream. Stating it as an option rather than a requirement is deliberate: this
+specification does not know its deployment's threat model, and it will not claim a protection it
+cannot verify is in force.
+
+**Integrity metadata travels with every retained image**, as §5.6 requires, so that an image which
+resolves but does not match its record is detectable rather than trusted.
+
+## 5.12 Requirements
 
 - **R5.1** The note stream shall be line-delimited, one complete JSON object per record, appended
   in write order.
@@ -1206,20 +1685,29 @@ one of its own.
   [modules/videoio/include/opencv2/videoio.hpp:1076,1150,1201], which is a media container rather
   than a note artefact. This specification is therefore the whole contract.
 
-- **R5.3** Every record shall declare its kind, drawn from the closed set of four in §5.2.
+- **R5.3** Every record shall declare its kind, drawn from the closed set of four in §5.2 —
+  `frame`, `input`, `segment`, `session` — and every record of kind `input` shall additionally
+  declare its `origin`, one of `os_hook` or `annotation`.
 
   Verdict: Host work
 
   Owner: the application's writer. The set is closed so a consumer can exhaustively switch on it;
-  extending it is a schema change, not a configuration option.
+  extending it is a schema change, not a configuration option. The annotation revisions of §5.10
+  are records of this stream and are named without extending it: they are the `annotation` origin
+  of the `input` kind, which is why the taxonomy can express its own requirements (R5.15 through
+  R5.19) while remaining closed at four.
 
-- **R5.4** Every record shall carry the seven common fields of §5.3, in that order, before any
-  kind-specific field.
+- **R5.4** Every record of every kind shall carry all seven common fields of §5.3, in that order,
+  before any kind-specific field, writing JSON `null` for a field it has no value for rather than
+  omitting it.
 
   Verdict: Host work
 
   Owner: the application's writer. Fixed order is a readability guarantee for diffing and review,
-  and the field set is what makes any record orderable without knowing its kind.
+  and the field set is what makes any record orderable without knowing its kind. Unconditional
+  presence is the part an implementer is most likely to shade: `source` is the field that will
+  often be `null` (§5.5), and an implementation that omits it there forces every consumer to treat
+  a missing key and a known-absent surface as two cases when the format defines one.
 
 - **R5.5** Exactly one session-end record shall be written per session, by the first successful
   stop.
@@ -1240,14 +1728,17 @@ one of its own.
   only where that back-end serves the route chosen in R1.6. This is the format-side counterpart of
   the correlation policy in R2.9.
 
-- **R5.7** Every record that has a source shall carry it as a single normalised identity,
-  independent of the ingestion route used to reach it.
+- **R5.7** Every record shall carry the `source` field, holding a single normalised identity
+  independent of the ingestion route used to reach it where the record has a source, and JSON
+  `null` where it has none.
 
   Verdict: Host work
 
   Owner: the application, which holds the mapping from each route's own addressing to the
   normalised form. Recording a route-specific encoding instead would make the same surface look
-  like two sources across a fallback (R1.8).
+  like two sources across a fallback (R1.8). Which records carry a value and which carry `null` is
+  fixed in §5.5, so nullability is a defined property of each kind — and, within the `input` kind,
+  of each origin — rather than an implementation's choice.
 
 - **R5.8** A retained image shall be addressable from its record without a separate index.
 
@@ -1257,14 +1748,17 @@ one of its own.
   scheme is not configurable, because a consumer that has to be told the naming convention cannot
   read an arbitrary stream.
 
-- **R5.9** A missing image shall be distinguishable from a deleted one, and neither shall be read
-  as a damaged stream.
+- **R5.9** A frame that retained no image shall be distinguishable from one whose image is not
+  available, a non-resolving reference shall not be read as evidence of any particular cause, and
+  neither state shall be read as a damaged stream.
 
   Verdict: Host work
 
-  Owner: the application's writer and its retention policy: a null reference means no image was
-  retained, and a reference resolving to no file means the image was removed. A consumer treats
-  both as an image being unavailable.
+  Owner: the application's writer and its retention policy, over the three states of §5.6. A null
+  reference states that no image was retained. A non-resolving reference states only that the image
+  is unavailable: the format cannot distinguish a failed write from an accidental loss, a
+  relocation, a corruption or a deliberate deletion, so no consumer may infer one. Deliberate
+  deletion is learned from the retention audit record of R5.23 and from nothing else.
 
 - **R5.10** Retained frames shall be encoded and written as image files beside the note stream.
 
@@ -1306,26 +1800,31 @@ one of its own.
   Verdict: Host work
 
   Owner: the application, as a design constraint on its own configuration surface. The
-  configurable set is exactly the five values listed in §5.9.
+  configurable set is exactly the one enumerated in §5.9 and nothing beyond it.
 
-- **R5.15** An annotation shall be created as a record carrying a stable identifier with its
-  initial geometry and text.
+- **R5.15** An annotation shall be created as an `input` record with `origin` of `annotation` and
+  `revision` of `create`, carrying a stable `annotation_id`, the `target` frame's `event_id`, and
+  its initial geometry and text.
 
   Verdict: Host work
 
   Owner: the application. The identifier is stable for the annotation's lifetime and is what every
-  later revision refers to.
+  later revision refers to; the field set is fixed in §5.10 and the kind and its discriminator in
+  §5.2, so an annotation revision is a record of this stream in its own right, carried by a kind the
+  closed taxonomy already defines rather than by a kind added for it.
 
-- **R5.16** An annotation shall be edited by appending an update record carrying its identifier and
-  the changed fields only.
+- **R5.16** An annotation shall be edited by appending an `input` record with `origin` of
+  `annotation` and `revision` of `update`, carrying its `annotation_id` and the changed fields only.
 
   Verdict: Host work
 
   Owner: the application. Appending rather than rewriting is what keeps the stream append-only and
-  keeps every earlier state readable.
+  keeps every earlier state readable; carrying only the changed fields is what makes the fold of
+  §5.10 an overlay rather than a replacement.
 
-- **R5.17** An annotation shall be removed by appending a delete record carrying its identifier and
-  a tombstone.
+- **R5.17** An annotation shall be removed by appending an `input` record with `origin` of
+  `annotation` and `revision` of `delete`, carrying its `annotation_id` and a null payload as the
+  tombstone.
 
   Verdict: Host work
 
@@ -1337,24 +1836,91 @@ one of its own.
   Verdict: Host work
 
   Owner: the application, by folding an annotation's revisions to one step short of the latest
-  (§5.10). No inverse operation is defined for any revision kind, because none is needed.
+  (§5.10). No inverse operation is defined for any revision, because none is needed.
 
 - **R5.19** Reopening a session shall reconstruct every annotation deterministically from the
-  stream alone.
+  stream alone, by folding each `annotation_id`'s revisions — the `input` records carrying that
+  identifier with `origin` of `annotation` — in ascending `event_id` order.
 
   Verdict: Host work
 
-  Owner: the application, by folding each identifier's revisions in `event_id` order. The fold is a
-  pure function of the stream, so two readers of one stream reconstruct the same state.
+  Owner: the application. The fold is a pure function of the stream and its order is fixed by
+  `event_id` rather than by line position, so two readers of one stream reconstruct the same state
+  even where the writer serialised records out of timeline order (§2.4).
+
+- **R5.20** The note stream and the image directory shall be created accessible only to the account
+  that owns the session, with those permissions applied at creation.
+
+  Verdict: Host work
+
+  Owner: the application's writer, at the point it creates each artefact. Applied at creation
+  rather than corrected afterwards, because a file created with default permissions was readable
+  for the interval before the correction, and the artefact this format produces is a record of a
+  user's screen and keystrokes (§5.11).
+
+- **R5.21** `session_id` and `annotation_id` shall be application-generated and restricted to
+  `[A-Za-z0-9_-]{8,64}`; every path shall be built by a canonical join and verified after
+  resolution to lie inside the configured storage root, and a name the platform reserves shall be
+  refused.
+
+  Verdict: Host work
+
+  Owner: the application's writer. `session_id` is a directory component of the image name (§5.6),
+  so an unconstrained identifier is a path expression: a separator, a `..` component, an absolute
+  prefix or a reserved name would place a write outside the storage root. The character set
+  excludes every one of those by construction, and the post-resolution containment check is what
+  makes the guarantee structural instead of dependent on the identifier's generator being correct.
+  A path failing the check is refused rather than rewritten.
+
+- **R5.22** The storage root shall be a configured value and shall never be derived from the
+  content of a record.
+
+  Verdict: Host work
+
+  Owner: the application. It is one of the configurable values of §5.9; deriving a root from record
+  content would make the destination of a write depend on data the session recorded rather than on
+  the deployment's decision.
+
+- **R5.23** Deletion of a retained image under the retention policy shall be recorded in a
+  retention audit record, and shall never be inferred from a reference that does not resolve.
+
+  Verdict: Host work
+
+  Owner: the application's retention component, which writes the record — the removed reference's
+  `session_id` and `event_id`, the policy that required the removal, and the civil time of it — to
+  its retention audit log beside the note stream. It is not a record of this stream because
+  deletion happens after the session's clock has stopped and the `kind` set is closed (R5.3, §5.6).
+  This is what closes the gap §5.6 opens: the format cannot distinguish a deliberate deletion from
+  a failure, so the deliberate case states itself elsewhere.
+
+- **R5.24** A `frame` record with a non-null `screenshot_ref` shall carry `screenshot_sha256`, the
+  digest of the stored bytes, and `screenshot_bytes`, their length.
+
+  Verdict: Host work
+
+  Owner: the application's writer, which computes both as it writes the file. Without them a
+  consumer can establish only that a file exists at the reference, not that it is the image the
+  record describes; with them, an image that was replaced, truncated or rewritten is detectable
+  (§5.6).
+
+- **R5.25** Encryption at rest of the note stream and the image directory shall be a supported
+  configuration option.
+
+  Verdict: Host work
+
+  Owner: the application or the platform storage it is deployed on. The schema is unaffected — a
+  consumer reads the decrypted stream and sees the format of §5.3 — which is why this is an option
+  the deployment selects rather than a change to the record contract. This specification does not
+  assert that any deployment has it in force.
 
 
 # 6. UI Component Requirements
 
-The interface has three jobs: show the user what is being captured, let the user mark it up, and
-let the user control the session. This section specifies those as requirements and reaches a verdict
-on each against the display module's public surface. It names no interface toolkit or component
-library, because none is specified for this application and naming one would be an invention rather
-than a requirement.
+The interface has four jobs: show the user what is being captured, show them that it is being
+captured, let them mark it up, and let them control the session. This section specifies those as
+requirements and reaches a verdict on each against the display module's public surface. It names no
+interface toolkit or component library, because none is specified for this application and naming
+one would be an invention rather than a requirement.
 
 ## 6.1 "Annotation support" is three different questions
 
@@ -1417,6 +1983,15 @@ The preview presents every captured frame, continuously. The admission gate of �
 freeze the preview during every quiet period, which is exactly when a user checks that capture is
 still running. Any throttling of the preview is therefore a separate requirement with its own
 justification (R6.2), and it is never the admission threshold reused.
+
+A live preview is not by itself an answer to "is this recording?", and the interface owes that
+answer explicitly. The recording state R1.17 requires the session to hold is displayed for as long
+as capture is active, and it is displayed as its own indicator rather than inferred from frames
+moving in a window — frames move while a session is paused between segments, a preview window can
+be occluded or minimised, and on a backend that discards titles and properties (§6.2) the
+conventional place to put such a state conveys nothing. The requirement is R6.15, and it is the
+interface half of the authorisation posture §1.2 sets: a user who authorised a recording can see at
+any moment that it is still running.
 
 ## 6.5 What the module does not offer, and how that is framed
 
@@ -1603,3 +2178,15 @@ establishes that.
   [current-state-capability-map.md §3](./current-state-capability-map.md). This is what makes every
   condition in this section actionable rather than a caveat: an interface that queries once at
   startup can disable a control instead of registering a callback nothing will ever call.
+
+- **R6.15** The interface shall display a recording indicator for as long as capture is active.
+
+  Verdict: Host work
+
+  Owner: the application's interface, over the session state of R1.17. The indicator is drawn into
+  the presented frame with the drawing primitives of R6.7, because that route carries no backend
+  condition — the window title would be the obvious alternative and it conveys nothing on a backend
+  that discards titles [modules/highgui/src/window_framebuffer.cpp:319]. It is a distinct element
+  rather than an inference from the preview updating (§6.4): a paused or occluded preview must not
+  be readable as capture having stopped, and capture that is running must never be invisible to the
+  person being recorded.

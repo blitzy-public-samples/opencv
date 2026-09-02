@@ -47,9 +47,19 @@ only that the identifiers exist.
 [modules/videoio/include/opencv2/videoio.hpp:1230]. Writer properties are a separate enumeration
 [modules/videoio/include/opencv2/videoio.hpp:216-235].
 
-For a notetaking application the writer is the retention path for a captured session as video, and
-it is available on the same module and the same backend set as capture. One writer property bears on
-correlation and is easy to misread: `VIDEOWRITER_PROP_PTS`
+For a notetaking application the writer is the retention path for a captured session as video.
+Capture and writing share one VideoIO registry but not one backend set. Writer availability is
+declared per registry entry as a capability bit, `MODE_WRITER`
+[modules/videoio/src/videoio_registry.hpp:18], one of the four mode bits that mask defines
+[modules/videoio/src/videoio_registry.hpp:15-20], and `VideoWriter` is available only through the
+subset of entries that declares it — which is exactly the subset `getWriterBackends`
+[modules/videoio/include/opencv2/videoio/registry.hpp:42] returns. In the built-in table the writer
+bit is carried by, among others, the FFmpeg, GStreamer, Intel Media SDK, AVFoundation, Media
+Foundation, image-sequence and MotionJPEG entries, while the DirectShow and Video4Linux entries
+declare capture modes without it [modules/videoio/src/videoio_registry.cpp:66-193], so a backend
+that can open a capture is not thereby a backend that can write one.
+
+One writer property bears on correlation and is easy to misread: `VIDEOWRITER_PROP_PTS`
 [modules/videoio/include/opencv2/videoio.hpp:230] is presentation metadata the caller supplies **to**
 the writer when encapsulating externally encoded video. It is an input to encoding, not an
 observation of when anything was captured.
@@ -144,14 +154,21 @@ pair separator `"|"` [modules/videoio/src/cap_ffmpeg_impl.hpp:1197], so the gram
 be named from outside the library.
 
 **Condition: device-oriented opening is build-conditional, and the route reaches only a demuxer.**
-Opening by device index is compiled behind a libavdevice guard
-[modules/videoio/src/cap_ffmpeg_impl.hpp:1213-1218], where an `"f"` key overrides the per-platform
+Opening by device index is compiled behind the guard `HAVE_FFMPEG_LIBAVDEVICE`
+[modules/videoio/src/cap_ffmpeg_impl.hpp:1213,1218], where an `"f"` key overrides the per-platform
 default before the device list is enumerated
-[modules/videoio/src/cap_ffmpeg_impl.hpp:1219-1237]; without libavdevice the backend logs that
-"OpenCV should be configured with libavdevice to open a camera device" and returns false
-[modules/videoio/src/cap_ffmpeg_impl.hpp:1246-1247]. And because the key resolves through
-`av_find_input_format`, the route reaches a demuxer and nothing else — not an arbitrary component of
-that library.
+[modules/videoio/src/cap_ffmpeg_impl.hpp:1219-1237]. The alternative arm of that guard is what runs
+without libavdevice: it logs that "OpenCV should be configured with libavdevice to open a camera
+device" and returns false [modules/videoio/src/cap_ffmpeg_impl.hpp:1245-1247]. And because the key
+resolves through `av_find_input_format`, the route reaches a demuxer and nothing else — not an
+arbitrary component of that library.
+
+That guard is a compile-time condition rather than a switch an application can set: a build carries
+either the libavdevice arm or the failure arm, which is what the two locators above establish.
+Whether a given build carries it therefore follows from how that build was configured, and no
+configure step was run against this checkout, so it is not determinable here. Which build control
+settles the guard is not established by the sources this dossier cites, and no claim is made
+about it.
 
 ### The accurate joint statement
 
@@ -394,9 +411,11 @@ which of these will actually work.
 
 ## 3.4 Runtime backend membership
 
-Runtime membership is a different thing from the public surface, and it is defined by the built-in
-backend list [modules/highgui/src/registry.impl.hpp:27-66]. The identifiers are `"GTK"`, `"GTK3"`
-and `"GTK2"` — statically registered where GTK is available
+Runtime membership is a different thing from the public surface, and the list that defines it
+[modules/highgui/src/registry.impl.hpp:27-66] is narrower than its name suggests: it is the
+membership of the **backend-compatible** backends, the implementations reached through the module's
+internal backend interface, registered either statically or as dynamic plugin entries. The
+identifiers are `"GTK"`, `"GTK3"` and `"GTK2"` — statically registered where GTK is available
 [modules/highgui/src/registry.impl.hpp:33,35,37] and otherwise declared as dynamic plugin entries
 [modules/highgui/src/registry.impl.hpp:42-44]; `"FB"`, the framebuffer backend of §3.8
 [modules/highgui/src/registry.impl.hpp:48]; `"QT"` [modules/highgui/src/registry.impl.hpp:53,55];
@@ -407,12 +426,52 @@ Two precisions about that list matter. First, the `"QT"` entry is disabled: both
 forms sit behind `#if 0  // TODO` [modules/highgui/src/registry.impl.hpp:51]. The marker shows work
 started or considered and left incomplete; **the code records no reason**, and none is inferred here.
 Second, `currentUIFramework` returns the active backend's registry name where a backend is present
-[modules/highgui/src/window.cpp:1096-1105], and otherwise falls through to compile-time built-in
-names — returning `"QT"`, `"COCOA"` or `"WAYLAND"` according to what the build has, and an empty
-string where none matches [modules/highgui/src/window.cpp:1108-1120]. So two of the names this
-function can return are not members of the runtime backend list, and an application that treats its
-result as an index into that list will not always find a match. This is a structural fact about the
-two mechanisms; the code states no intent about it.
+[modules/highgui/src/window.cpp:1096-1105], and otherwise falls through a fixed chain of
+compile-time built-in names — returning `"QT"`, `"COCOA"` or `"WAYLAND"` according to what the build
+has, and an empty string where none matches [modules/highgui/src/window.cpp:1108-1120]. So two of
+the names this function can return are not members of the backend-compatible list, and an
+application that treats its result as an index into that list will not always find a match. This is
+a structural fact about the two mechanisms; the code states no intent about it.
+
+What those two names are is worth stating precisely, because absence from the list is easily read as
+absence from the build. They are **legacy compile-time built-ins**: real display implementations
+that the module's build selects through a single if/elseif chain, each arm setting a build label and
+adding the matching compile definition — Wayland [modules/highgui/CMakeLists.txt:55-57], Qt with its
+major version [modules/highgui/CMakeLists.txt:80-82] and Cocoa
+[modules/highgui/CMakeLists.txt:145-147]. The installed header states the same set from the
+application side, describing the returned name as one that could be COCOA, GTK2/3, QT, WAYLAND or
+WIN32, with an empty string where no backend is available
+[modules/highgui/include/opencv2/highgui.hpp:256-261]. So absence from the backend-compatible list
+means one narrow thing — that such a name cannot be selected through the internal backend interface
+— and it does not mean the implementation is absent from a build that has it, nor that the public
+probe cannot report it.
+
+### The Wayland conditions
+
+Wayland is the display backend whose conditions matter most to a Linux deployment target, and they
+are heavier than any other display option's. `WITH_WAYLAND` is declared OFF, is visible only on
+non-Apple, non-Android Unix, and carries a verification clause requiring `HAVE_WAYLAND`
+[CMakeLists.txt:235-237], so requesting the option is not the same as having the capability.
+Detection requires four separate components — wayland-client, wayland-cursor, xkbcommon, and
+wayland-protocols at version 1.13 or newer — and locates `wayland-scanner` as a required host
+program, with `HAVE_WAYLAND` set only where all four components are found
+[modules/highgui/cmake/detect_wayland.cmake:12-34]. Where the capability is available the build
+summary prints it as "(Experimental) YES" [CMakeLists.txt:1396]; that is the project's own statement
+of status and it explains nothing about the capability boundary.
+
+The backend is output-side by construction, and this is the finding a screen-capture reader must not
+misread: the build branch that enables it generates exactly one protocol, `xdg-shell`, compiles the
+window backend source, and links the client, cursor and keyboard-handling libraries, with a graphics
+library added only where one was separately detected [modules/highgui/CMakeLists.txt:55-79]. No
+screen-copy protocol, no image-capture protocol, no portal client and no media transport is
+generated or linked there. What the branch builds is a display target for OpenCV's own windows, and
+nothing in it reads a display.
+
+The same build branch adds the `HAVE_WAYLAND` compile definition
+[modules/highgui/CMakeLists.txt:57] that the probe's fallback arm tests
+[modules/highgui/src/window.cpp:1116-1117], and that is the link which makes the runtime consequence
+checkable: a build in which all four components were found reports `"WAYLAND"` from
+`currentUIFramework` even though no such entry exists in the backend-compatible list.
 
 ## 3.5 A public declaration does not imply uniform backend support
 
@@ -640,9 +699,15 @@ finds them at run time; and recognition accuracy is a property of the chosen wei
 be established against a labelled sample of the actual screen content.
 
 **Route B — an external engine.** A dedicated OCR engine with the library supplying preprocessing
-only; a native OCR library together with its per-language data is the canonical instance. The
-tradeoff is a larger licensing, packaging and build-integration burden, offset by not having to
-source and validate model weights.
+only; the canonical instance is `libtesseract` together with its per-language `tessdata` language
+data, which is two artefacts of different kinds — a native library the application links or loads,
+and language data that must be packaged and present at run time for each language to be recognised.
+Nothing in this tree provides or gates either: no reference to such an engine appears in the
+in-scope headers and there is no build option for a text-recognition engine anywhere in the build
+configuration, as §4.4 establishes, so the engine and its data are wholly the application's to
+obtain and integrate. The tradeoff against Route A is a larger licensing, packaging and
+build-integration burden, with the provenance and licence of both engine and language data recorded
+as Route A's artefacts require, offset by not having to source and validate model weights.
 
 **The recorded decision: prefer Route A unless the task requires full-page layout analysis or a
 breadth of languages a single-line CRNN-CTC model cannot cover.** The comparison axes are
@@ -654,15 +719,22 @@ downloaded or evaluated by this analysis.
 Restated with its condition attached: text recognition is available to this application only where
 the caller supplies a detector and a recogniser — as a constructed network or as model and
 configuration paths — plus a vocabulary for recognition; and no such asset exists in the in-scope
-source domain. The machinery is present, the capability is not, and the external dependency is the
-three artefacts of Route A or the engine and language data of Route B.
+source domain. The machinery is present, the capability is not, and the external dependency is
+named: either the three artefacts of Route A — a detector model, a CRNN-CTC recogniser model and a
+character vocabulary — or, on Route B, `libtesseract` with its per-language `tessdata` data.
 
 # 5. DNN/Inference Hooks
 
 **Verdict, stated first: `dnn` could classify a captured region today, given a model.** The path
-from a frame to a prediction is complete and public. It could not classify a user *action* from
-pixels alone, and §5.4 separates the reason — the events that constitute an action are not in the
-frame — from the prerequisites a learned route would need.
+from a frame to a prediction is complete and public. Two claims about user *actions* have to be kept
+apart, because collapsing them yields a false negative. Pixels cannot **directly observe** an
+operating-system input event: a click is a click because the event stream says so, and a difference
+image shows only that pixels changed near a location. A supplied model **can** infer a visual action
+class from pixels — the classification wrapper [modules/dnn/include/opencv2/dnn/dnn.hpp:1656] and
+its `classify` call [modules/dnn/include/opencv2/dnn/dnn.hpp:1697,1700] are declared and public —
+but that is the optional learned route, and it requires an enumerated action taxonomy, a model
+trained against it and labelled screen recordings, none of which exists in this tree. §5.4 keeps the
+routes separate and records those prerequisites rather than assuming them away.
 
 ## 5.1 The inference contract
 
@@ -676,8 +748,8 @@ Execution targets are enumerated as backends
 [modules/dnn/include/opencv2/dnn/dnn.hpp:834], and running a forward pass
 [modules/dnn/include/opencv2/dnn/dnn.hpp:725].
 
-Model loading covers the formats an externally trained model is likely to arrive in, each reader
-declared once for a path and once for an in-memory buffer:
+Four readers are assessed here, covering the formats an externally trained model is likely to arrive
+in, each declared once for a path and once for an in-memory buffer:
 
 | Format | Locator |
 |---|---|
@@ -685,6 +757,14 @@ declared once for a path and once for an in-memory buffer:
 | TensorFlow Lite | [modules/dnn/include/opencv2/dnn/dnn.hpp:1161,1169] |
 | ONNX | [modules/dnn/include/opencv2/dnn/dnn.hpp:1261,1281] |
 | Format-detecting reader | [modules/dnn/include/opencv2/dnn/dnn.hpp:1201,1217] |
+
+Those four are the readers this survey assesses, and they are not the only route by which a model
+enters the library: the same header additionally declares Intel Model-Optimizer readers in path,
+vector-buffer and raw-pointer-buffer forms
+[modules/dnn/include/opencv2/dnn/dnn.hpp:1229,1239,1251], and a network may instead be constructed
+empty and populated layer by layer
+[modules/dnn/include/opencv2/dnn/dnn.hpp:566,570,632-643]. Neither route alters the finding of §4.4
+and §5.3: the routes are declared here, the model is not.
 
 Preprocessing from an image to a blob is `blobFromImage`
 [modules/dnn/include/opencv2/dnn/dnn.hpp:1308], `blobFromImages`
@@ -710,15 +790,27 @@ model.
 
 ## 5.3 What this means for classifying captured content
 
-A change-detected region from §2 is an ordinary matrix, so the sequence — crop the region,
-preprocess it into a blob, run a forward pass, read the prediction — is entirely within the public
-API cited above. Classifying what a captured region *is* (a dialog, a code editor, a video player,
-a particular application window) is thus a solved integration problem in this tree.
+A change-detected region from §2 is an ordinary matrix, and once it is in hand three of the four
+steps that carry it to a prediction are within the public API cited above: preprocess it into a blob
+[modules/dnn/include/opencv2/dnn/dnn.hpp:1308], bind that blob as the network's input
+[modules/dnn/include/opencv2/dnn/dnn.hpp:834], and run the forward pass whose return value is the
+prediction to be read [modules/dnn/include/opencv2/dnn/dnn.hpp:725] — or, collapsed into one call,
+the classification wrapper of §5.2 [modules/dnn/include/opencv2/dnn/dnn.hpp:1656,1697,1700].
 
-What it requires beyond the tree is a model, and for that model a label set that means something to
-the notetaking use case. Neither exists here: no bundled weights, and no taxonomy of screen content
-or of user actions is declared anywhere in the in-scope modules. Inference machinery is not
-inference capability, exactly as in §4.
+The remaining step, obtaining the region's pixels as the matrix those calls consume, is **caller
+preprocessing**: none of the inference entry points cited above crops. Within the in-scope modules
+the patch-extraction facility is `getRectSubPix`
+[modules/imgproc/include/opencv2/imgproc.hpp:2517], which copies a patch of a given size about a
+given centre and interpolates at non-integer coordinates; general region-of-interest addressing on a
+matrix is not provided by the in-scope modules. What is a solved integration problem in this tree is
+therefore the cited preprocess, bind-and-forward and read chain, not the crop that precedes it — and
+it is on that chain that classifying what a captured region *is* (a dialog, a code editor, a video
+player, a particular application window) rests.
+
+What that classification requires beyond the tree is a model, and for that model a label set that
+means something to the notetaking use case. Neither exists here: no bundled weights, and no taxonomy
+of screen content or of user actions is declared anywhere in the in-scope modules. Inference
+machinery is not inference capability, exactly as in §4.
 
 ## 5.4 Actions: three routes, kept separate
 
@@ -753,7 +845,11 @@ first-class backend from a host-side adapter, two things easily conflated.
 The capture ABI declares its API version as 2
 [modules/videoio/src/plugin_capture_api.hpp:16] and its binary-interface version as 1
 [modules/videoio/src/plugin_capture_api.hpp:22], with the header stating the compatibility rules
-each governs [modules/videoio/src/plugin_capture_api.hpp:14-22].
+each governs [modules/videoio/src/plugin_capture_api.hpp:14-22]. It is private and non-installed:
+the whole interface is declared in a module-internal header
+[modules/videoio/src/plugin_capture_api.hpp:41] under the module's source tree rather than in its
+installed include tree, so none of it is application API and none of it may be read as a supported
+way for an application to add a capture source.
 
 The function table is versioned in three increments. The base set
 [modules/videoio/src/plugin_capture_api.hpp:41-104] carries the backend identifier
@@ -780,11 +876,15 @@ backends of §1.7, not to VideoIO as a whole.
 
 ## 6.2 What the loader adds to the ABI
 
-Discovery is organised around a registry-known identifier. Candidates are enumerated by base name
-[modules/videoio/src/backend_plugin.cpp:302] from a search path taken from the environment
-[modules/videoio/src/backend_plugin.cpp:310], matched against a fixed file-name pattern
-[modules/videoio/src/backend_plugin.cpp:331], with a per-backend environment override of that
-pattern [modules/videoio/src/backend_plugin.cpp:332]. Loading is lazy: the factory initialises on
+Discovery is organised around a registry-known identifier, and the three controls that decide it are
+named exactly here because they are what determines whether an installed application finds a plugin
+at all. Candidates are enumerated by base name
+[modules/videoio/src/backend_plugin.cpp:302] from a search path read from the configuration
+parameter `OPENCV_VIDEOIO_PLUGIN_PATH` [modules/videoio/src/backend_plugin.cpp:310], matched against
+the default file-name pattern `opencv_videoio_<name>*` — the lower-cased base name between the
+platform's library prefix and suffix [modules/videoio/src/backend_plugin.cpp:331] — and that pattern
+is overridable per backend through `OPENCV_VIDEOIO_PLUGIN_<NAME>`, with the base name upper-cased
+[modules/videoio/src/backend_plugin.cpp:332]. Loading is lazy: the factory initialises on
 first use [modules/videoio/src/backend_plugin.cpp:249,278-290] — the same step §1.6 reaches during
 open resolution — and walks its candidates, skipping any library that fails to load
 [modules/videoio/src/backend_plugin.cpp:386-392].
@@ -873,14 +973,26 @@ The interface plugin ABI declares both of its versions as zero and annotates eac
 statement of the interface's maturity, quotable as such; it explains nothing about the capability
 boundary, and it is not read here as a reason for anything. Its function table has a single entry
 [modules/highgui/src/plugin_api.hpp:44] and its entry symbol is declared at
-[modules/highgui/src/plugin_api.hpp:63].
+[modules/highgui/src/plugin_api.hpp:63]. Like the capture ABI of §6.1 it is private and
+non-installed, declared in a module-internal header [modules/highgui/src/plugin_api.hpp:18,24,44,63]
+under the module's source tree rather than in its installed include tree, so it is not application
+API either.
 
-Its discovery path is incomplete. Candidate enumeration
-[modules/highgui/src/plugin_wrapper.impl.hpp:174] reads its search path from an environment variable
-belonging to another component, with an in-source marker `// TODO OPENCV_PLUGIN_PATH` immediately
-above the call [modules/highgui/src/plugin_wrapper.impl.hpp:182-183], and no interface-specific path
-variable exists. The two halves that are complete are the file-name pattern
-[modules/highgui/src/plugin_wrapper.impl.hpp:204] and the per-backend override of it
+Its discovery path is incomplete, and naming the controls exactly is what shows where the gap falls.
+Candidate enumeration [modules/highgui/src/plugin_wrapper.impl.hpp:174] reads its search path from
+`OPENCV_CORE_PLUGIN_PATH` [modules/highgui/src/plugin_wrapper.impl.hpp:183] — a configuration
+parameter belonging to another component of the library, not to this interface — with the in-source
+marker `// TODO OPENCV_PLUGIN_PATH` on the line immediately above that read
+[modules/highgui/src/plugin_wrapper.impl.hpp:182]. That marker is a source comment and not an active
+control: no configuration parameter of that name is read anywhere on this path. There is no
+interface-specific search path either: `OPENCV_UI_PLUGIN_PATH` is **Not Found**, established by
+enumerating every occurrence of the `OPENCV_UI_PLUGIN` prefix across the whole `modules/` tree of
+this repository — the domain a user-interface plugin control would have to be declared in — which
+returns exactly one, the per-backend override below, and no path variable at all. The two halves
+that are complete are the default file-name pattern `opencv_highgui_<name>*`, the lower-cased base
+name between the platform's library prefix and suffix
+[modules/highgui/src/plugin_wrapper.impl.hpp:204], and the per-backend override of it through
+`OPENCV_UI_PLUGIN_<NAME>` with the base name upper-cased
 [modules/highgui/src/plugin_wrapper.impl.hpp:205]. What the marker shows is work started or
 considered and left incomplete; **the code records no reason**, and none is inferred here.
 
