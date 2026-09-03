@@ -1159,18 +1159,21 @@ and writing it as either settled or impossible would misreport it in opposite di
 [platform-capture-gap-assessment.md §3](./platform-capture-gap-assessment.md) names a concrete
 candidate chain and sources each of its links separately: the mediated session yields a transport
 descriptor and a monotonic serial identifying the granted stream, the media framework's source
-element for that transport accepts exactly those two values as properties, and the library accepts a
-manual pipeline whose terminating element is an appsink under one of two accepted names
+element for that transport must accept those two values — a descriptor supplied from outside it, and
+the granted stream's serial in place of a reusable identifier — which is a requirement on that
+element rather than a property surface any source consulted there documents, and the library accepts
+a manual pipeline whose terminating element is an appsink under one of two accepted names
 [modules/videoio/src/cap_gstreamer.cpp:1343], searching the parsed pipeline for an element so named
 [modules/videoio/src/cap_gstreamer.cpp:1502] and failing where there is none
-[modules/videoio/src/cap_gstreamer.cpp:1534]. The chain is
-`pipewiresrc fd=<fd> target-object=<serial> ! <conversion> ! appsink name=appsink0`, with the session
+[modules/videoio/src/cap_gstreamer.cpp:1534]. The chain is therefore a source element for that
+transport feeding a conversion stage into an appsink under one of those names, with the session
 opened and held by the application and both values obtained from it.
 
 So this phase's work on that platform is the validation of a named candidate rather than a search for
-a mechanism, and what it validates is enumerated rather than left as "the bridge". Six items: three
-are the ones §3 records as unsettled — the descriptor, the negotiation and the failure behaviour —
-and three are conditions the chain carries on its face:
+a mechanism, and what it validates is enumerated rather than left as "the bridge". Six items: four
+are the ones §3 records as unsettled — how the element accepts the two values, the descriptor's own
+lifetime, the negotiation and the failure behaviour — and two are conditions the chain carries on its
+face:
 
 - **Session lifetime and its owner.** The session belongs to the application; the library has no
   session concept to own it with. The phase records which component opens the session, holds it and

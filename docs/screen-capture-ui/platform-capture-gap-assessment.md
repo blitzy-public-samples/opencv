@@ -541,29 +541,36 @@ leaving them to be settled by whoever writes the code:
 A concrete candidate chain exists, and naming it is what this section owes. What it does not owe is
 a verdict of verified, which nothing read here supports.
 
-Each of the chain's three links is separately sourced. The portal returns a file descriptor from
-`OpenPipeWireRemote` and identifies each granted stream by a monotonic `pipewire-serial`
-(`org.freedesktop.portal.ScreenCast` specification, flatpak.github.io/xdg-desktop-portal). The
-PipeWire source element for GStreamer, which the PipeWire project ships in its own tree rather than
-the GStreamer plugin set, accepts exactly those two values, and accepts them as ordinary element
-properties with declared types and defaults rather than through a hand-off built for the purpose:
-`target-object` is a string property whose registration describes it as the source name or serial to
-connect to, with `NULL` meaning the default source, so the granted stream's monotonic serial is
-carried as text; and `fd` is an integer property described as the descriptor to connect with,
-admitting minus one through `G_MAXINT` and defaulting to minus one, so "no descriptor supplied" is a
-value the property carries rather than an absence of one (PipeWire project,
-`src/gst/gstpipewiresrc.c` at release tag 1.6.8, where the two properties are registered at lines
-360 and 424, gitlab.freedesktop.org/pipewire/pipewire). And the library accepts a manual
-pipeline whose terminating element is an appsink named `appsink0` or `opencvsink`
-[modules/videoio/src/cap_gstreamer.cpp:1343], searching the parsed pipeline for an element so named
-[modules/videoio/src/cap_gstreamer.cpp:1502] and failing where none is found
-[modules/videoio/src/cap_gstreamer.cpp:1534]. The candidate chain is therefore
-`pipewiresrc fd=<fd> target-object=<serial> ! <conversion> ! appsink name=appsink0`, with the portal
-session opened and held by the application and both values obtained from it.
+Each of the chain's three links is separately sourced, and the middle one is sourced as a
+requirement on the element rather than as a description of one. The portal returns a file descriptor
+to the PipeWire remote from `OpenPipeWireRemote` and identifies each granted stream by the monotonic
+`pipewire-serial` of §3.2, which since interface version 6 a consumer is directed to use for stream
+targeting through `PW_KEY_TARGET_OBJECT` in place of the reusable node identifier
+(`org.freedesktop.portal.ScreenCast` specification, flatpak.github.io/xdg-desktop-portal). Those two
+values are what the chain's middle link must accept, and a requirement is the form the sources here
+support for it: a GStreamer source element that connects to the PipeWire remote on a descriptor
+supplied from outside it, and that targets one granted stream by that serial rather than by the node
+identifier. No authority consulted here documents such an element's own property surface, because
+the GStreamer plugin reference publishes no page for a PipeWire source element
+(gstreamer.freedesktop.org), so the middle link is a requirement a build satisfies rather than a
+component described here. And the library accepts a manual pipeline whose terminating element is an
+appsink named `appsink0` or `opencvsink` [modules/videoio/src/cap_gstreamer.cpp:1343], searching the
+parsed pipeline for an element so named [modules/videoio/src/cap_gstreamer.cpp:1502] and failing
+where none is found [modules/videoio/src/cap_gstreamer.cpp:1534]. The candidate chain is therefore a
+PipeWire source element feeding a conversion stage into an appsink named `appsink0`, with the portal
+session opened and held by the application and both the descriptor and the granted stream's serial
+supplied to that element by it.
 
-Three things reading source cannot establish, each of which a build has to settle before the
-candidate becomes a route:
+Four things nothing read here establishes, each of which a build has to settle before the candidate
+becomes a route:
 
+- The mechanism by which the element accepts the two values. Which interface a PipeWire source
+  element exposes for taking a descriptor obtained outside it, and for naming one granted stream by
+  its serial rather than by the reusable node identifier, is not settled by anything read here: the
+  GStreamer plugin reference publishes no page for such an element (gstreamer.freedesktop.org), and
+  the portal specification stops at the values it returns (flatpak.github.io/xdg-desktop-portal).
+  Which element a build supplies, and what provisions and versions it, are settled with that
+  mechanism.
 - Descriptor ownership and lifetime. The descriptor belongs to the portal session the application
   owns, and the chain hands it to an element constructed inside the library's own pipeline. Whether
   it survives that hand-off — who duplicates it, who closes it, and in what order relative to the
@@ -576,13 +583,13 @@ candidate becomes a route:
   grant's restore token is replaced, is not established here. An interactive application needs a
   defined answer, because the session can end without the pipeline being told.
 
-Two consequences hold whatever that validation returns: the chain adds a plugin dependency for the
-PipeWire source element, and that dependency falls on the PipeWire project's own GStreamer plugin
-rather than on a module of the GStreamer plugin set, so it is provisioned, versioned and tracked
-with PipeWire; and the portal session's lifetime is owned by the application rather than by the
-library, which has no session concept to own it with. The verdict this section carries is a
-candidate to be validated rather than a verified route, and no route is asserted as the
-cross-platform primary on the strength of Wayland.
+Two consequences hold whatever that validation returns: the chain adds a plugin dependency for a
+PipeWire source element that the GStreamer plugin reference does not document
+(gstreamer.freedesktop.org), so what supplies, versions and tracks that element is settled by the
+build that chooses it rather than by anything read here; and the portal session's lifetime is owned
+by the application rather than by the library, which has no session concept to own it with. The
+verdict this section carries is a candidate to be validated rather than a verified route, and no
+route is asserted as the cross-platform primary on the strength of Wayland.
 
 ## 3.5 The handshake, drawn
 
@@ -620,7 +627,7 @@ sequenceDiagram
     Portal-->>App: file descriptor
     App->>PW: connect with descriptor,<br/>select stream by pipewire-serial
     PW-->>App: frames over the media transport
-    Note over App,PW: Candidate chain into an ingestion route:<br/>pipewiresrc fd/target-object into a named appsink.<br/>To be validated in a build, not verified here.
+    Note over App,PW: Candidate chain into an ingestion route:<br/>a source element taking the descriptor<br/>and serial into a named appsink.<br/>To be validated in a build.
     App->>X11: XGetImage or XShmGetImage on a drawable
     X11-->>App: pixels returned directly
     Note over App,X11: Contrast: no session, no authorising party,<br/>no separate transport.
@@ -662,14 +669,12 @@ sequenceDiagram
   candidate chain whose links are individually sourced: descriptor ownership and lifetime across the
   hand-off into the library's pipeline, caps negotiation to a format the appsink path accepts, and
   behaviour when the session is revoked or a persistence grant's token replaced — plus an owner for
-  the session's lifetime and an added plugin dependency for the PipeWire source element, which the
-  PipeWire project ships in its own tree rather than the GStreamer plugin set, so that dependency is
-  provisioned and versioned with PipeWire and the two properties the chain sets are declared there,
-  a string `target-object` carrying the source name or serial and an integer `fd` that defaults to
-  minus one (flatpak.github.io/xdg-desktop-portal; PipeWire project, `src/gst/gstpipewiresrc.c` at
-  release tag 1.6.8, lines 360 and 424, gitlab.freedesktop.org/pipewire/pipewire). Until a build
-  settles those the route is a candidate, which is what forbids naming this platform's route the
-  cross-platform primary.
+  the session's lifetime and an added plugin dependency for a PipeWire source element that the
+  GStreamer plugin reference does not document (gstreamer.freedesktop.org), so both that element's
+  provenance and the mechanism by which it accepts the descriptor and the granted stream's serial
+  are themselves unsettled (flatpak.github.io/xdg-desktop-portal). Until a build settles those the
+  route is a candidate, which is what forbids naming this platform's route the cross-platform
+  primary.
 - **D3.2** Neither mediated consent nor a session of any kind has a counterpart in the capture API,
   so the structural features of Wayland acquisition are unrepresentable in the library's own
   contract. What is distinctive here is the session and its transport rather than interactivity as
