@@ -53,7 +53,8 @@ blits OpenCV's own image onto the paint device context under `WINDOW_AUTOSIZE`
 Windows exposes three screen-acquisition mechanisms, none of which appears in this repository. Each
 is rendered below against the axes that decide whether it can serve the capture pipeline of
 [functional-spec.md §1](./functional-spec.md): source selection, permission model, transport, cursor
-handling, window and monitor scope, and added dependencies.
+handling, window and monitor scope, added dependencies, and — where the mechanism defines one —
+recording visibility, the indicator by which a user can tell that a capture is running.
 
 ### Desktop Duplication API
 
@@ -73,11 +74,29 @@ handling, window and monitor scope, and added dependencies.
 
 WinRT `GraphicsCaptureItem`, Microsoft Windows App Development documentation, learn.microsoft.com.
 
-- Source selection: normally initiated through a system picker, so the default posture is
-  user-selected.
-- Permission model: user-mediated by that picker in the normal case.
-- Transport: a Direct3D surface. A capture border is composited unless suppressed on versions that
-  permit suppression.
+- Source selection: two initiation paths, and the difference between them is a permission
+  difference. The documented normal path is the system picker: the developer invokes secure system
+  user interface with which the end user picks the display or application window to be captured, and
+  the picker returns the capture item. A programmatic path also exists — a capture item can be
+  created from a window or display identifier without any picker — and using it is a declared
+  capability matter rather than an unavailable one: the `graphicsCaptureProgrammatic` capability is
+  what is required to create a capture item from a window or display identifier, where the
+  picker-based path requires the `graphicsCapture` capability instead.
+- Permission model: user-mediated by the picker on the picker path, and **not** picker-mediated on
+  the programmatic path. The picker posture is a property of that initiation path, not of the
+  mechanism, so it may be credited only to a route that actually goes through the picker. §1.4
+  applies that distinction to the concrete bridge available here.
+- Transport: a Direct3D surface.
+- Recording visibility: a coloured notification border is drawn by the system around the actively
+  captured item, and around each item where several captures run at once. Suppressing it is its own
+  contract, and every part of that contract holds independently of how the capture item was created.
+  Using the border property at all requires the `graphicsCaptureWithoutBorder` capability declared
+  in the application's package manifest. Before the system will disable the border the application
+  must obtain the user's consent by requesting borderless capture access, which presents a prompt.
+  If the user denies it, setting the property to false succeeds and the value is then ignored, so
+  the border is still drawn — a suppression request is therefore never evidence that suppression
+  took effect. A border required for the same window or display by another application is drawn
+  regardless of what this application asks for.
 - Cursor: handled by the mechanism's own capture semantics.
 - Window and monitor scope: a first-class capture item for either a window or a monitor, carrying
   its own occlusion and minimisation semantics — an item survives the window being obscured.
@@ -101,33 +120,68 @@ The distinction between the last two is about the quality of the window abstract
 whether window targeting exists at all. Both can name a window; only the modern mechanism defines
 what happens when that window is obscured or minimised.
 
+One reading of these three entries has to be ruled out before §1.4 uses them, because it is the
+easiest inference to draw from the middle one. Permission and recording visibility are properties of
+the **concrete route** a build selects, not of the API family it belongs to: the modern mechanism has
+a picker-mediated initiation path and a system-drawn border, and neither of those travels with the
+mechanism to a route that creates its capture item from an identifier and asks for no border. §1.4
+establishes, for the route this repository can actually reach, whether either of them applies.
+
 ## 1.4 Whether an ingestion route bridges the gap
 
-The two generic ingestion routes are owned by [current-state-capability-map.md
-§1](./current-state-capability-map.md), which states their conditions; this section states only
-which Windows mechanism each route can reach. The two do not have the same reach, and the difference
-belongs to the route rather than to the mechanism. The manual-pipeline route accepts any pipeline
-that can be assembled from available GStreamer elements and terminates in an appsink named
-`appsink0` or `opencvsink` [modules/videoio/src/cap_gstreamer.cpp:1343]; the manual-pipeline branch
-searches the parsed pipeline for an element so named [modules/videoio/src/cap_gstreamer.cpp:1502]
-and fails with "cannot find appsink in manual pipeline" when there is none
-[modules/videoio/src/cap_gstreamer.cpp:1534]. The environment-mediated route reaches only what
-`av_find_input_format` resolves [modules/videoio/src/cap_ffmpeg_impl.hpp:1206-1210] — a demuxer, not
-an arbitrary component of that library — and its device-oriented opening is compiled behind the
-`HAVE_FFMPEG_LIBAVDEVICE` build guard [modules/videoio/src/cap_ffmpeg_impl.hpp:1213,1218], under
-which device registration is also performed [modules/videoio/src/cap_ffmpeg_impl.hpp:629-634].
-Without that guard the backend does not fall back: it logs that OpenCV should be configured with
-libavdevice to open a camera device and returns false
-[modules/videoio/src/cap_ffmpeg_impl.hpp:1245-1247].
+The two generic ingestion routes, and the condition each carries, are owned by
+[current-state-capability-map.md §1](./current-state-capability-map.md) and inventoried in
+[technical-inventory.md §1](./technical-inventory.md). This section neither restates them nor
+relaxes them: it states only which Windows mechanism each route can reach, which is the part that
+belongs to this platform. One distinction from that owning section is what the reach turns on, and
+it is carried here by reference rather than by re-derivation — the manual-pipeline route accepts a
+pipeline the application assembles from the elements an installation provides, while the
+environment-mediated route resolves a *demuxer* by name. A mechanism fronted only by a filter is
+therefore outside the second route's reach whatever the mechanism itself can do, which is the
+finding this section needs and the reason the three mechanisms below do not all bridge the same way.
 
 **Desktop Duplication is reachable through the GStreamer route.** The `d3d11` plugin's
 `d3d11screencapturesrc` is documented as a Desktop Duplication API based screen-capture element,
 with a `capture-api` property selecting between the DXGI mode and a Windows Graphics Capture mode,
 and produces BGRA in system or Direct3D 11 memory (GStreamer plugin reference,
 gstreamer.freedesktop.org). One element therefore fronts both of the modern Windows mechanisms of
-§1.3, and both are manual-pipeline candidates subject to the appsink condition above.
+§1.3, and both are manual-pipeline candidates subject to that route's appsink condition, stated
+in [current-state-capability-map.md §1](./current-state-capability-map.md).
 
-The FFmpeg position on that mechanism is different, and it is a limitation of that route alone
+**What that element does not carry across is the picker and the border**, and this is the point at
+which a family-level reading of §1.3 would credit the route with mediation it does not have. The
+element addresses its target by identifier, not by user selection: it exposes a `monitor-handle`
+property taking a monitor handle and defaulting to zero, a `monitor-index` property that is a
+zero-based monitor index whose default of minus one means the primary monitor, and a `window-handle`
+property taking a window handle and defaulting to zero (GStreamer plugin reference,
+gstreamer.freedesktop.org). Every one of those is a value the application supplies, so there is no
+picker anywhere in the chain, on either setting of `capture-api`, whose own default selects the
+Desktop Duplication mode (gstreamer.freedesktop.org) — that mode has no picker in the mechanism
+either (§1.3), and the Windows Graphics Capture mode is reached here by the programmatic path rather
+than the picker path, which is the declared-capability distinction §1.3 draws. The element likewise
+requests no recording indicator by default: its `show-border` property, which shows border lines
+around the capture area when the Windows Graphics Capture mode is selected and requires Windows 11
+or newer, defaults to false (GStreamer plugin reference, gstreamer.freedesktop.org). Neither picker
+mediation nor a visible recording indicator may therefore be credited to this bridge.
+
+The converse overclaim is equally wrong and is ruled out by the same sources. Whether a border is
+actually drawn is decided by the platform contract above the element, not by the element's request:
+suppression requires a declared capability and a granted user consent, a denied consent leaves the
+suppression request accepted and ignored with the border still drawn, and a border required for the
+same window or display by another application is drawn regardless (learn.microsoft.com, per §1.3).
+An element that asks for no border is asking, not deciding, and the platform may still draw one.
+
+The requirements that follow hold whichever route a build selects. Because this route supplies
+neither an operating-system picker nor a guaranteed indicator, the application's own authorisation
+step and its own observable recording state are required regardless of platform — they are the only
+parts of the chain the application controls, and on this route nothing else stands between it and
+capture the user has not been asked about. And because both behaviours belong to the route rather
+than to the mechanism, the actual picker and border behaviour of whichever route is selected is
+validated on the target rather than assumed from the API family it fronts. The same application-side
+requirement is stated for the unmediated Windows and X11 mechanisms in §7.2, where it holds
+uniformly.
+
+The FFmpeg position on Desktop Duplication is different, and it is a limitation of that route alone
 rather than of the mechanism. `ddagrab`, which fronts Desktop Duplication, is a libavfilter video
 source rather than a demuxer (FFmpeg documentation, ffmpeg.org), so `av_find_input_format` cannot
 resolve it and it does not reach `VideoCapture` by the environment-mediated route. A path from it
@@ -141,7 +195,7 @@ ffmpeg.org); being a demuxer, it is resolvable by name through the environment-m
 that route's conditions. GStreamer exposes it as `gdiscreencapsrc` in the `winscreencap` plugin, a
 GDI desktop-or-region source producing `video/x-raw` BGR and carrying `cursor`, `monitor`, `x`, `y`,
 `width` and `height` properties (GStreamer plugin reference, gstreamer.freedesktop.org); it is a
-manual-pipeline candidate under the appsink condition. Neither route holds the GDI mechanism
+manual-pipeline candidate under that same route condition. Neither route holds the GDI mechanism
 exclusively.
 
 The Windows bridge map is therefore complete in one direction and unchanged in the other: each of
@@ -192,6 +246,35 @@ it remains undiscoverable through the library's own vocabulary, which is the sub
   reaches the library through either of the two GDI bridges in §1.4, the `gdigrab` demuxer on the
   environment-mediated route or the `winscreencap` plugin's source element on the manual-pipeline
   route (ffmpeg.org; gstreamer.freedesktop.org).
+- **D1.4** Permission and recording visibility on Windows are properties of the concrete route a
+  build selects rather than of the API family it fronts, and the route this tree can actually reach
+  carries neither an operating-system picker nor a requested recording indicator — so on that route
+  nothing authorises a capture, and nothing is guaranteed to make one observable, unless the
+  application does it itself. What the platform may still draw of its own accord is stated in the
+  last part of this delta rather than relied on as a control. The baseline is a capture contract
+  with no vocabulary for either: opening is a call against an untyped source encoding [modules/videoio/include/opencv2/videoio.hpp:864,877,888,901,914] that either
+  succeeds or fails, with no consent, grant, revocation or recording-state concept, and the display
+  surface exposes no capture indicator of any kind — it presents an image into a window
+  [modules/highgui/include/opencv2/highgui.hpp:345] beneath a public probe that reports only which
+  framework is active [modules/highgui/include/opencv2/highgui.hpp:261] — as assessed in
+  [current-state-capability-map.md §1](./current-state-capability-map.md) for the capture side and
+  [current-state-capability-map.md §3](./current-state-capability-map.md) for the display side, and
+  inventoried in [technical-inventory.md §1](./technical-inventory.md). The requirements are the
+  explicit source selection and explicit-failure start of
+  [functional-spec.md §1](./functional-spec.md) and the interface set of
+  [functional-spec.md §6](./functional-spec.md), which is where a recording state the user can
+  observe has to live. The delta has three parts. The application supplies its own authorisation
+  step, because the modern mechanism's picker belongs to its picker initiation path while the
+  concrete bridge uses the programmatic one, addressing its target by monitor handle, monitor index
+  or window handle with no picker in the chain (learn.microsoft.com; gstreamer.freedesktop.org). It
+  supplies its own observable recording state, because the element requests no border by default and
+  a suppression request is not a suppression result in any case — a declared capability and a
+  granted consent are required before the system disables the border, a denial leaves the request
+  accepted and ignored, and another application's requirement for the same window or display is
+  honoured regardless (learn.microsoft.com). And it validates the selected route's actual picker and
+  border behaviour on the target, because a build that switches the element's capture mode, or moves
+  between the picker and programmatic paths, changes what the user is shown without changing
+  anything in the library.
 
 # 2. Linux X11 Capture Path
 
@@ -391,6 +474,19 @@ that delivers the pointer position separately from the frame. Since interface ve
 should identify a stream by its monotonic `pipewire-serial` rather than by a node identifier, which
 may be reused.
 
+**A restore token is sensitive capability state, not an opaque convenience value**, and the
+specification's own restore semantics are what establish it. The stated purpose of persistence is
+that the user does not have to re-select sources on every run, and the token presented to a later
+`SelectSources` is the thing that permits that session to be restored
+(flatpak.github.io/xdg-desktop-portal). Holding it can therefore reduce or remove the interaction a
+fresh session would face, to the extent the portal backend's policy honours a restored session —
+which makes it a credential in effect, carrying a screen-capture grant across runs, even though the
+interface never calls it one. The specification fixes its lifecycle inside the session and stops
+there: a token exists only where persistence was requested and granted, is invalidated after one
+use, and is replaced on each successful restore. Where a client keeps it between sessions, what may
+never receive a copy of it, and when it is destroyed are all outside the interface contract, so they
+are assigned to the application in §3.3 and carried as a delta in §3.6 rather than left open.
+
 The structural difference from X11 is the analytical core of this section, and §7 turns on it. On
 X11 a client with display access reads a drawable directly and synchronously, and no other party is
 involved (x.org). On Wayland the same intent becomes a session negotiated with a service, authorised
@@ -415,6 +511,37 @@ contract.
 The planning posture that follows is a portability conclusion rather than a prohibition: an
 unattended-first-run design cannot be relied on portably, and must be validated per target
 environment.
+
+A restored session is exactly the deployment-side case the second of those two statements covers,
+and it is where the capability state of §3.2 acquires its owners. Where the backend's policy honours
+a restored session, the stored token is what stands between a run and a prompt; where the stored
+session cannot be restored, the token is ignored and the user is prompted as they would be without
+one (flatpak.github.io/xdg-desktop-portal). A token therefore never confers a grant by itself, and
+the handling it needs follows from the fact that it can carry one. Because the interface contract
+stops at the session boundary, this assessment assigns the between-session owners rather than
+leaving them to be settled by whoever writes the code:
+
+- **Storage.** The token is held in the platform's protected application storage, reachable by the
+  account that owns the session and no wider, under the least privilege that storage offers. No
+  second copy is kept anywhere else, and it is not carried in an environment variable, a command
+  line or a configuration file that travels with the session's output.
+- **Records and diagnostics.** The token is never written into the note stream of
+  [functional-spec.md §5](./functional-spec.md), and never into a log line, an error message, a
+  crash report or any other diagnostic output. A capture session's records and logs are read by
+  tooling, by exports and by people who have no need of the grant the token carries, and a value
+  that appears in them has left protected storage for good.
+- **Replacement.** A successful restore invalidates the token used and returns its replacement
+  (flatpak.github.io/xdg-desktop-portal), so the stored value is replaced atomically: an
+  interruption part-way through leaves either the old value or the new one and never a torn one. A
+  stored value that reads back as neither is discarded, and the session is authorised afresh.
+- **Erasure.** The token is erased when the user revokes the capture permission, at logout or at
+  uninstall, and whenever a policy check the application applies to the stored grant fails. Erasure
+  is the correct response to any doubt about the grant, because a discarded token costs one prompt
+  and a retained one outlives the authorisation it represents.
+- **Independence from the application's own gate.** The application authorises each session itself,
+  and that gate is evaluated whether or not a token is present. Possession of a token is evidence
+  that some previous session was granted; it is never a substitute for authorising this one, and
+  where the application's gate refuses, no token is presented to the portal at all.
 
 ## 3.4 The bridge from a portal session into an ingestion route: a candidate, not a verified route
 
@@ -478,7 +605,7 @@ sequenceDiagram
     App->>Portal: CreateSession
     Portal-->>App: session handle
     App->>Portal: SelectSources (once per session,<br/>persistence and restore token both optional)
-    Portal->>Comp: negotiate candidate sources
+    Note over App,Portal: SelectSources configures source types and options.<br/>What the backend does with that configuration<br/>before Start is not fixed by the interface.
     App->>Portal: Start
     Portal->>Comp: request authorisation
     Note over Portal,Comp: Typical path: a consent dialog is presented.<br/>Not guaranteed by the interface contract —<br/>backend and compositor policy decide.
@@ -555,6 +682,27 @@ sequenceDiagram
   (flatpak.github.io/xdg-desktop-portal; gstreamer.freedesktop.org). Until a build settles those,
   the route is a candidate, which is what forbids naming this platform's route the cross-platform
   primary.
+- **D3.4** The restore token is sensitive capability state with no owner anywhere in this tree, so
+  the one artefact that can carry a screen-capture grant from one run to the next has no storage,
+  redaction, replacement or erasure contract until the application supplies one. The baseline is a
+  capture contract with nothing to hold it: opening is a call against an untyped source encoding
+  [modules/videoio/include/opencv2/videoio.hpp:864,877,888,901,914] with no session, grant,
+  revocation or credential surface of any kind, and the only persistence facility in the authorised
+  modules writes video frames [modules/videoio/include/opencv2/videoio.hpp:1076,1189-1201] — as
+  assessed in [current-state-capability-map.md §1](./current-state-capability-map.md) and
+  inventoried in [technical-inventory.md §1](./technical-inventory.md). Protected storage for a
+  credential-bearing value is likewise not provided by the in-scope modules, and no provider for it
+  is named here. The requirement is the note stream of
+  [functional-spec.md §5](./functional-spec.md), which fixes what a session's records contain and is
+  precisely what the token must never enter. The delta is the token's whole between-session
+  lifecycle in application hands, as §3.3 assigns it: protected least-privilege storage; no
+  appearance in the note stream, in any log line or in any diagnostic output; atomic replacement on
+  each successful restore, since the specification invalidates a token after one use and returns its
+  replacement (flatpak.github.io/xdg-desktop-portal); erasure on revocation, at logout or uninstall
+  and on a failed policy check; and an application authorisation gate evaluated independently of the
+  token, so possession never authorises a session by itself. None of this is a property the portal
+  can enforce on a client, which is why it is stated here as a requirement on the application rather
+  than as a feature of the interface.
 
 
 # 4. Screen-Capture-as-a-Source Gap
@@ -638,20 +786,13 @@ selectors inventoried in [technical-inventory.md §5](./technical-inventory.md).
   that makes the route a screen route — the external element or demuxer that performs the
   acquisition, the source targets that element or demuxer can address, and the route's own
   prerequisites, none of which the registry describes or enumerates. Neither route makes the screen
-  a first-class source, and the two are not equals: the pipeline route is a documented parameter
-  contract [modules/videoio/include/opencv2/videoio.hpp:799-805] conditioned on a
-  terminating appsink named `appsink0` or `opencvsink`
-  [modules/videoio/src/cap_gstreamer.cpp:1343], whereas the other is mediated by an environment
-  variable [modules/videoio/src/cap_ffmpeg_impl.hpp:1184] parsed with a key-value grammar
-  [modules/videoio/src/cap_ffmpeg_impl.hpp:1197], reaching only what `av_find_input_format` resolves
-  — a demuxer, not an arbitrary component of that library
-  [modules/videoio/src/cap_ffmpeg_impl.hpp:1206-1210] — and, for device-oriented opening,
-  conditional on the `HAVE_FFMPEG_LIBAVDEVICE` build guard
-  [modules/videoio/src/cap_ffmpeg_impl.hpp:1213,1218], without which that opening fails explicitly:
-  the backend logs that OpenCV should be configured with libavdevice to open a camera device and
-  returns false [modules/videoio/src/cap_ffmpeg_impl.hpp:1245-1247]. The delta is therefore
-  discoverability and typing, not capture: an application cannot ask the library whether a screen
-  source is available, and must carry that knowledge itself.
+  a first-class source, and the two are not equals — one is a documented parameter contract and the
+  other an environment-mediated selection, each carrying prerequisites of its own. Those
+  prerequisites are stated once, by the owning section, and are not restated here; what this delta
+  adds is that none of them is discoverable, so an application cannot learn from the library whether
+  any of them holds. The delta is therefore discoverability and typing, not capture: an application
+  cannot ask the library whether a screen source is available, and must carry that knowledge
+  itself.
 - **D4.3** There is no screen-target addressing contract, so two applications capturing the same
   monitor would name it differently and neither could discover the other's convention. The baseline
   is the three encodings the open surface actually offers — a device index, a pseudo-filename through
@@ -827,7 +968,8 @@ reached in [current-state-capability-map.md §3](./current-state-capability-map.
   sorting before a frame at equal time, and civil time recorded for presentation only. The delta is
   the clock and the merge, owned by the application: the specification defines the contract rather
   than deferring it, and what remains is the host-side implementation on both stream sources,
-  including stamping at the point of acquisition rather than at the point of writing.
+  including stamping each record's time value at the point of acquisition rather than at the point
+  of writing, while the sequence number is assigned by the single writer as it serialises.
 - **D5.4** No portable thread-affinity contract is exposed, so a correlation design cannot assume
   which thread will deliver a window event. The baseline is what the source establishes: the public
   header requires an active window and periodic event processing and says nothing about thread
@@ -838,8 +980,9 @@ reached in [current-state-capability-map.md §3](./current-state-capability-map.
   [current-state-capability-map.md §3](./current-state-capability-map.md) and inventoried in
   [technical-inventory.md §3](./technical-inventory.md); the requirement is the cross-thread
   stamping rule of [functional-spec.md §2](./functional-spec.md). The delta is that the application
-  must make the guarantee the library does not: stamp each record where it is acquired, whichever
-  thread that is, and serialise the writing itself. Where a claim about thread behaviour is needed,
+  must make the guarantee the library does not: stamp each record's time values where the record is
+  acquired, whichever thread that is, and serialise the writing itself — the single writer being
+  where each record's sequence number is issued rather than at acquisition. Where a claim about thread behaviour is needed,
   it holds only for the backend that establishes it and must name that backend.
 
 
@@ -1002,28 +1145,41 @@ corresponding availability flag false.
   that does vary, [current-state-capability-map.md §3](./current-state-capability-map.md); the
   requirement is the single capture pipeline of
   [functional-spec.md §1](./functional-spec.md) that all three platforms must present. The delta is
-  best read on two independent axes, because a single consent axis puts Windows on the wrong side of
-  it. On operating-system mediation, the Wayland portal is consent-mediated as a matter of contract
-  (flatpak.github.io/xdg-desktop-portal); Windows.Graphics.Capture is normally initiated through a
-  system picker and is therefore also potentially interactive (learn.microsoft.com); and DXGI
-  Desktop Duplication, GDI `BitBlt` and the X11 reads have no operating-system consent step at all
-  (learn.microsoft.com; x.org). Interactive authorisation is thus a property of two mechanisms on
-  two platforms, not of one platform. On application-level authorisation, the requirement is uniform
-  and falls on every route including the unmediated ones: the application authorises the capture
-  itself and keeps a recording state the user can observe, because on the routes the operating
-  system does not mediate, nothing else stands between the application and silent capture. §3.3's
-  width is unchanged by either axis — mediated consent as a matter of contract, and unattended
-  operation as a per-environment deployment question rather than a portable guarantee.
+  best read on two independent axes, and on the first of them the unit of comparison is the route
+  rather than the platform or the API family. On operating-system mediation, the Wayland portal is
+  consent-mediated as a matter of contract, whatever route consumes its streams
+  (flatpak.github.io/xdg-desktop-portal). The Windows.Graphics.Capture family does have a mediated
+  initiation path — a system picker through which the user selects the display or window, and a
+  system-drawn border around the item being captured (learn.microsoft.com) — but that path is one of
+  two the family offers, and the bridge reachable from this tree is not on it: the element creates
+  its capture item from a monitor handle, a monitor index or a window handle, with no picker in the
+  chain, and requests no border (gstreamer.freedesktop.org, per §1.4). DXGI Desktop Duplication, GDI
+  `BitBlt` and the X11 reads have no operating-system consent step at all (learn.microsoft.com;
+  x.org). The accurate parity statement is therefore sharper than a platform-level one: interactive
+  authorisation is guaranteed by contract on one platform, present as an unused initiation path on
+  another, and absent from every remaining mechanism — so an assessment that credits Windows with
+  mediation is describing a route the build has not selected. The converse overclaim is excluded by
+  the same sources: the platform does mediate the picker path, and a border the platform decides to
+  draw — because suppression was not consented to, or because another application requires one for
+  the same window or display — is drawn whatever the element requests (learn.microsoft.com). On
+  application-level authorisation, the requirement is uniform and falls on every route including the
+  unmediated ones and the one whose family has a picker it does not use: the application authorises
+  the capture itself and keeps a recording state the user can observe, because on the routes the
+  operating system does not mediate, nothing else stands between the application and silent
+  capture. §3.3's width is unchanged by either axis — mediated consent as a matter of contract, and
+  unattended operation as a per-environment deployment question rather than a portable guarantee.
   What is genuinely distinctive about Wayland is not that it asks and the others do not; it is the
   session lifecycle and the transport. `SelectSources` is callable once per session, `Start`
   typically prompts, persistence is an optional grant, a restore token where one is returned is
   single-use and replaced, and frames arrive over a separate media transport addressed by descriptor
   and serial (flatpak.github.io/xdg-desktop-portal) — none of which has a counterpart in an open
   call that either succeeds or fails. A portable abstraction must therefore carry an authorisation
-  stage whose outcome may be interactive on two platforms, a session lifetime that only one platform
-  imposes, and an application-level consent and recording state on all three. Because the Wayland
-  bridge into an ingestion route is a candidate rather than a verified route (§3.4), no route may be
-  named the cross-platform primary on the strength of that platform.
+  stage whose outcome is interactive by contract on one platform and interactive only on routes that
+  use a mediated initiation path elsewhere, a session lifetime that only one platform imposes, and
+  an application-level consent and recording state on all three, since the last of those is the only
+  one no route can take away. Because the Wayland bridge into an ingestion route is a candidate
+  rather than a verified route (§3.4), no route may be named the cross-platform primary on the
+  strength of that platform.
 - **D7.2** Display and interaction parity is backend-conditional rather than platform-conditional,
   so a feature verified on one target can be silently inert on another. The baseline is the
   backend-compatible membership list and its per-platform gates

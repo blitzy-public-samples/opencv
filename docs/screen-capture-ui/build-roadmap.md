@@ -41,23 +41,39 @@ targets differ not in whether pixels can be obtained but in who authorises the o
 frames are then transported — and that the difference reads on two independent axes, because a
 single consent axis puts a target on the wrong side of it.
 
-On operating-system mediation the mechanisms genuinely differ, and they differ per mechanism rather
-than per platform. The mediated Linux path requires consent as a matter of contract; the modern
-Windows mechanism that a system picker normally initiates is therefore also potentially interactive;
-and the remaining assessed mechanisms — the other Windows ones and the X11 reads — carry no
-operating-system step at all. Interactive authorisation is thus a property of two mechanisms on two
-platforms rather than of one platform, which is why "the platform that asks" is the wrong unit of
-design. On application-level authorisation there is no asymmetry to accommodate: the requirement is
+On operating-system mediation the mechanisms genuinely differ, and the unit that differs is finer
+than the platform and finer than the mechanism: it is the concrete route a build selects. The
+mediated Linux path requires consent as a matter of contract. The modern Windows mechanism has a
+picker-led initiation path, but the picker belongs to that path rather than to the mechanism, and
+the route reachable from here takes the mechanism's other initiation path, addressing its target by
+handle or index with no picker anywhere in the chain. The remaining assessed mechanisms — the other
+Windows ones and the X11 reads — carry no operating-system step at all. So interactive authorisation
+is guaranteed by contract on one platform, present on another as an initiation path the reachable
+route does not take, and absent everywhere else — which is why "the platform that asks" and "the
+mechanism that asks" are both the wrong unit of design. The unit is the route a build actually
+instantiates, and that makes the answer a property of the build rather than of the target.
+
+Recording visibility divides the same way, and it is a second axis rather than a second reading of
+the first: a system-drawn indicator is a property of a particular route on a particular version, it
+is separately gated where it exists, and the reachable Windows route requests none. So no route is
+credited with an indicator it does not ask for, and none is credited with one whose appearance the
+platform decides rather than the route. Both readings are
+[platform-capture-gap-assessment.md §7](./platform-capture-gap-assessment.md)'s, at the width that
+section states them, and §1 of the same document holds the per-route detail. On
+application-level authorisation there is no asymmetry to accommodate: the requirement is
 uniform across every route, including the unmediated ones, because on a route the operating system
 does not mediate nothing else stands between the application and silent capture.
 
 So the authorisation stage is present from the start, and on every route it is the application's
 own. The application obtains its authorisation before it acquires a source and exposes a recording
 state the user can observe for as long as capture is active — on the mediated Linux path and on the
-picker-led Windows mechanism exactly as on the routes where the operating system asks nothing. Where
-the platform imposes a step of its own, that step is an **additional** requirement whose outcome may
-be interactive, satisfied in addition and never instead; it does not stand in for the application's
-gate, and no route reaches capture with the gate skipped. Both halves are requirements rather than
+picker-led Windows initiation path exactly as on the routes where the operating system asks nothing.
+Where the platform imposes a step of its own, that step is an **additional** requirement whose
+outcome may be interactive, satisfied in addition and never instead; it does not stand in for the
+application's gate, and no route reaches capture with the gate skipped. The same holds for the
+indicator: where a route's platform draws one, it is drawn in addition to the recording state the
+application exposes and never in place of it, because a control the application does not own is one
+it cannot guarantee. Both halves are requirements rather than
 prudence: [functional-spec.md §1](./functional-spec.md) states that capture is authorised before it
 begins, by the application, on every platform, including those on which the operating system
 requires nothing; that platform mediation is no substitute for it, being absent on some targets and
@@ -203,6 +219,73 @@ media backend includes device-opening support [modules/videoio/src/cap_ffmpeg_im
 with the demuxer that acquisition mechanism is exposed as. Nothing is added to this library, and no
 part of its source is changed.
 
+Naming a dependency is not the same as accepting one, and every addition above is a native component
+that runs inside the capture process. So each is recorded with five facts before this phase can
+exit, and the record is of what was resolved rather than of what was requested: the exact resolved
+version, not a range and not "current"; the official distribution channel it came from, named
+specifically enough that a second person could obtain the same artefact from the same place; the
+integrity evidence that the artefact obtained is the artefact that channel publishes, verified
+against the publisher rather than against the copy just downloaded; the component's support state at
+that version, meaning whether the version is still receiving security fixes and when that ends; and
+the result of a published-advisory review at that version, with the fixed version named where an
+advisory applies and the action taken recorded. A component that is out of support, or that carries
+an applicable advisory with no available fixed version, **blocks this phase** rather than being
+carried into it with a note — the phase's own route-availability finding is what would otherwise
+launder an unmaintained plugin into the prototype's evidence. This applies to every addition equally,
+including the ones the deployment installs as packages and the ones the host platform supplies,
+because the process does not distinguish them at load time. It applies to this library itself on the
+same terms: the version under test is recorded, and where plugins are enabled the discovery controls
+that decide which native library the process loads are set explicitly, per
+[technical-inventory.md §5](./technical-inventory.md) and
+[current-state-capability-map.md §6](./current-state-capability-map.md).
+
+**Five facts about a named component are not the whole of the dependency, so the record is a complete
+resolved bill of materials rather than a list of the components a phase happens to name.** Every
+operational dependency any phase introduces or relies on is enumerated in it, direct **and**
+transitive, to the leaves of the graph, and each entry is recorded at the version actually resolved on
+the build under test rather than the version requested — a request is a range or a package name, and a
+range resolves differently on a different host and on a different day, so a bill of materials of
+requested versions describes no build that exists. The published-advisory review runs against that
+whole graph and not against the named components alone.
+
+The transitive half is the load-bearing half, and the reason is what the components do rather than how
+many there are. A screen-source element or a portal client is a thin piece of code over the libraries
+that do the work — the decoders, parsers, transport, compression and image libraries beneath it — and
+those are what read bytes the session did not author, from a display server, a portal, a media
+transport or an asset file. So the layer that carries the memory-safety and parsing risk is usually not
+the layer a phase names, and a graph recorded only to its first level can be entirely clear while the
+component actually exposed to those bytes is unpatched. A graph recorded to its leaves is also what
+makes an advisory actionable in the other direction: when one names a library rather than a plugin,
+the question "is that library in this deployment, at what version, underneath what" has an answer
+already written down instead of an investigation that starts after the advisory.
+
+**Every entry in that bill of materials has a named accountable maintenance owner, and the
+responsibility does not end when the phase does.** Recording an advisory review at an exit is a
+point-in-time act: it says what was known on the day of the exit, and an advisory published the
+following week has no addressee unless one was named. So each entry — direct and transitive, installed
+or host-supplied — carries the person or the specifically named team accountable for advisory response,
+patching and end-of-life migration for that component, together with how they are reached and what
+they have accepted; a role in the abstract is not an owner, because "the operator" and "whoever
+deploys it" name nobody who can be told. The responsibility runs for as long as the component is in
+the deployment, past this phase's exit date and past every later phase's, which is what makes the
+record a living one rather than an artefact of the exit. Where a component is one the target platform
+supplies and its patches come from that platform's own maintainers, the named owner is whoever in the
+deployment is accountable for tracking that upstream and acting on what it publishes — upstream
+maintainers are not an addressee for this deployment's decision to keep running an unpatched host. An
+entry with no named owner **blocks this phase in exactly the way an out-of-support component does**,
+and for the same reason: both are components nobody is going to fix. The maximum time a deployment
+allows between an applicable advisory and a patched deployment is a product decision, and the request
+supplies none, so where no value is supplied that part of the record is **recorded as blocked pending
+that decision** rather than written against an interval this dossier would have had to invent — the
+owner, the graph and the blocking outcomes stand and are evaluable without it.
+
+Those five facts, the resolved bill of materials and the named owner are one rule, and this is the
+dossier's single statement of it. Every later phase references it as **the dependency rule of §2**
+rather than restating it — Phase 2 (§3) for the input-hook facility, Phase 3 (§4) for its considered
+answer that it adds no component, Phase 4 (§5) for its per-target additions, and Phase 5 (§6) for its
+assets and its external engine — because a rule restated five times is a rule with a clause dropped in
+one of them.
+
 **Sequencing:** none; this phase is first. It has no predecessor, and nothing in it waits on another
 phase. The one ordering constraint it does carry is internal to the process it builds: where the X11
 route above is the selected one, Xlib threading initialisation precedes library initialisation,
@@ -213,9 +296,14 @@ application's own startup path where no later step can reorder it.
 
 - The selected platform is recorded together with the evidence for its selection: which mechanism,
   which ingestion route, the observation that the route's own condition held in the build under test,
-  and — where the route chosen is a candidate carrying open items — which of those items this phase
-  settled and which it left to Phase 4 (§2.1). Targets considered and not selected are recorded with
-  the evidence that excluded them, so the exclusion is re-derivable rather than assumed.
+  and — where the route chosen is a candidate carrying open items — the settlement of every one of
+  those items that is material to the selected target and route. An item material to what this phase
+  selected is this phase's to settle, not Phase 4's: the eligibility gate of §2.1 refuses a target
+  while such an item is unsettled, so a target that reaches this exit has none left open. Only open
+  items belonging to a target this phase considered and did not select pass to Phase 4 (§5)
+  unsettled, because those are the targets Phase 4 takes up. Targets considered and not selected are
+  recorded with the evidence that excluded them, so the exclusion is re-derivable rather than
+  assumed.
 - Frames from an explicitly named source arrive and are displayed. Named means the application states
   which surface it opened rather than accepting whatever an auto-detection sentinel resolves to.
 - A request for an unavailable source fails explicitly, naming the source and the reason, and no
@@ -238,10 +326,42 @@ application's own startup path where no later step can reorder it.
   capture is active, demonstrated on the selected platform whether or not that platform's mechanism
   carries an operating-system step of its own, per
   [functional-spec.md §1](./functional-spec.md) and the principle of §1.1.
-- The captured source is chosen from the objects host platform code enumerates rather than named by
-  a free-form string, and the route argument is assembled from the application's allowlist of
-  elements and properties plus that enumerated identifier, with any value carrying the route's own
-  delimiters or metacharacters rejected rather than escaped, per
+- The consent and recording-visibility behaviour **of the concrete route this phase selected** is
+  recorded from observation on the target, not carried over from the mechanism family that route
+  fronts. The record answers three questions for that route as instantiated: whether any
+  operating-system selection step appeared at all, and if so what selected the surface; whether the
+  platform drew a recording indicator, and on what version and under which capability or consent it
+  did or did not; and what the route requested in each case, kept distinct from what the platform
+  then did, since a request to suppress an indicator is not a suppression and a route that requests
+  none may still be given one. Where the route addresses its target by handle or index there is no
+  selection step to observe, and the exit is met by recording that absence rather than by finding
+  one — the per-route positions being
+  [platform-capture-gap-assessment.md §1](./platform-capture-gap-assessment.md)'s and their parity
+  reading [platform-capture-gap-assessment.md §7](./platform-capture-gap-assessment.md)'s. This exit
+  does not license skipping the one above: the application's own authorisation and its own
+  observable recording state are required on this route whatever this record says, and this record
+  exists so that a later phase inherits the route's real behaviour rather than the family's.
+- Every added dependency is recorded under the dependency rule of the added-dependencies section
+  above, in full: the five facts per component — exact resolved version, official channel, integrity
+  evidence verified against the publisher, support state at that version, and advisory review with
+  the action taken — the complete resolved bill of materials, direct and transitive, at the versions
+  the build under test actually resolved, with the advisory review run over that whole graph rather
+  than over the named components, and a named accountable maintenance owner for every entry in it
+  whose responsibility continues past this exit. An out-of-support component, one carrying an
+  applicable advisory with no fixed version available, or an entry with no named owner leaves this
+  exit **unmet and blocks the phase**, and the record states which component and which finding did
+  it.
+- The captured source is a platform object rather than a free-form string, obtained by whichever of
+  the two selection shapes the chosen mechanism uses: enumerated, where the mechanism exposes
+  addressable targets and host platform code can list them before choosing; or granted, where the
+  identity does not exist until the platform mediates the choice and returns it, in which case the
+  returned object is normalised into the session's source identity after the grant. Which shape
+  applies follows from the mechanism selected, per
+  [platform-capture-gap-assessment.md §1](./platform-capture-gap-assessment.md) and
+  [platform-capture-gap-assessment.md §3](./platform-capture-gap-assessment.md). Under either shape
+  the route argument is assembled from the application's allowlist of elements and properties plus
+  that platform-issued identifier, with any value carrying the route's own delimiters or
+  metacharacters rejected rather than escaped, and with nothing a user typed carried into it, per
   [functional-spec.md §1](./functional-spec.md). The route argument is what decides which components
   a session instantiates — the pipeline string is parsed by the media framework itself where it is
   neither a valid URI nor an existing file [modules/videoio/src/cap_gstreamer.cpp:1432,1438], and the
@@ -284,39 +404,42 @@ settle before that candidate is a route. So the mechanism side is satisfiable on
 and no target is ineligible for lack of a mechanism that can reach the library.
 
 The discriminator is therefore the evidence this phase itself collects, in two parts. **Which route
-condition holds in the build under test:** the pipeline-string route needs a pipeline terminating in
-an appsink under one of the two accepted names [modules/videoio/src/cap_gstreamer.cpp:1343] and the
-element that performs the acquisition present in that installation, while the environment-mediated
-route needs device-opening support compiled in [modules/videoio/src/cap_ffmpeg_impl.hpp:1213] and a
-demuxer its input-format lookup can resolve [modules/videoio/src/cap_ffmpeg_impl.hpp:1206-1210] —
-the flags that decide either being inventoried in
-[technical-inventory.md §5](./technical-inventory.md) and the routes themselves owned by
-[current-state-capability-map.md §1](./current-state-capability-map.md). **And whether the open items
-a candidate route carries have been settled where the target under consideration needs them:** for
-the mediated path those are the items
+condition holds in the build under test:** each route's condition is owned by
+[current-state-capability-map.md §1](./current-state-capability-map.md), with the flags that decide
+availability inventoried in [technical-inventory.md §5](./technical-inventory.md); this phase neither
+restates those conditions nor relaxes them. What it adds is observation of the route it intends to
+use in the build it is using — that the route's condition was satisfied there, that the component
+performing the acquisition was present in that installation, and that the route opened a source
+rather than merely being compiled in. **And whether the open items a candidate route carries have
+been settled for the target under consideration:** for the mediated path those are the items
 [platform-capture-gap-assessment.md §3](./platform-capture-gap-assessment.md) enumerates —
 ownership and lifetime of the transport descriptor across the hand-off, negotiation to a format the
-sink accepts, and behaviour when the session ends underneath the pipeline — which this phase either
-settles for its own selected target or leaves to Phase 4 (§5.2), where they are that phase's
-declared work.
+sink accepts, and behaviour when the session ends underneath the pipeline.
+
+Which phase owns those items follows from selection and not from convenience. Every item material to
+the target and route **this phase selects** is settled in this phase; an item material to the
+selected route cannot be deferred, because the route is what this phase exists to prove. Items
+belonging to a target this phase considered and did not select stay open and pass to Phase 4 (§5.2),
+where those targets and their items are that phase's declared work.
 
 A target is eligible for this phase when both conditions are observed to hold for it in the build
 under test, and it is not eligible while a route condition fails there or a material open item is
 unsettled — a statement about the evidence in hand rather than about the platform, and one this
-phase can change by gathering more. Recording which targets were eligible on that basis, with the
-evidence for each and the reason for each exclusion, is part of this exit, and it is also the input
-Phase 4 (§5) picks up.
+phase can change by gathering more. The gate and the exit therefore say the same thing from two
+directions: a target carrying an unsettled material open item is not selected, and a target that is
+selected reaches the exit with none of its own left open. Recording which targets were eligible on
+that basis, with the evidence for each and the reason for each exclusion, is part of this exit, and
+it is also the input Phase 4 (§5) picks up.
 
 ## 2.2 Route availability is a property of the build under test
 
-The two routes are not interchangeable, and this phase records which one it used and why. The dossier
-treats the pipeline-string route as the stronger of the two, because it is a documented parameter
-contract on the open call [modules/videoio/include/opencv2/videoio.hpp:799-805] rather than an
-environment variable, and because its condition is a naming requirement on the pipeline the
-application writes [modules/videoio/src/cap_gstreamer.cpp:1343] rather than a build-time capability.
-The other route reaches only what its input-format lookup resolves
-[modules/videoio/src/cap_ffmpeg_impl.hpp:1206-1210] and needs device-opening support compiled in
-[modules/videoio/src/cap_ffmpeg_impl.hpp:1213].
+The two routes are not interchangeable, and this phase records which one it used and why. Which of
+them is the stronger, and the condition each carries, are settled by
+[current-state-capability-map.md §1](./current-state-capability-map.md) and inventoried in
+[technical-inventory.md §1](./technical-inventory.md); this phase takes that comparison as given
+rather than re-deriving it, because a second statement of a condition is where the condition gets
+weakened. What this phase owes is the observation: which route it used, that route's condition
+observed to hold in the build under test, and the evidence for both.
 
 Neither route is discoverable through the registry, which is the finding
 [platform-capture-gap-assessment.md §4](./platform-capture-gap-assessment.md) states as a delta: the
@@ -369,13 +492,16 @@ records it.
 **Scope:** the correlation contract of [functional-spec.md §2](./functional-spec.md) — one clock per
 session, a monotonic time and a sequence number on every record, and a merge rule that is a total
 order — and the note stream of [functional-spec.md §5](./functional-spec.md), which is the taxonomy,
-the common field set, the screenshot addressing and the durable append the contract is recorded
+the common field set, the screenshot addressing and the checked append the contract is recorded
 through. The frame-admission gate is implemented here too, because the stream records admitted frames
-and the gate is what decides admission. Outside this phase's scope: any interface beyond the
-preview Phase 1 established, and any extraction of content from the frames.
+and the gate is what decides admission. So does the representation of annotation revision records in
+that stream, which is a property of the format rather than of the interface that produces them — the
+lifecycle that produces them is Phase 3's work (§4). Outside this phase's scope: any interface beyond
+the preview Phase 1 established, and any extraction of content from the frames.
 
-**Inputs:** the session clock and sequence design and the merge rule, from
-[functional-spec.md §2](./functional-spec.md); the record taxonomy and the durability mechanism, from
+**Inputs:** the session clock, the sequence-allocation point and the merge rule, from
+[functional-spec.md §2](./functional-spec.md); the record taxonomy, the durability mechanism and the
+failure model that mechanism is declared against, from
 [functional-spec.md §5](./functional-spec.md); the OS input-capture component, which is host code and
 whose boundary is assessed in
 [platform-capture-gap-assessment.md §5](./platform-capture-gap-assessment.md); and what the capture
@@ -390,31 +516,82 @@ a session-wide event stream is acquired by the host and not by this library. Not
 library side: the clock, the merge, the note stream and the admission gate are all application code
 written above the capture object (§3.2), not packages to be brought in.
 
+That one addition is a dependency in exactly the sense §2 means, and it is the addition most easily
+let through, because it does not arrive looking like a package: it is a facility the host platform
+exposes, reached through the platform's own interface rather than installed from a catalogue. It is
+also the addition with the least margin for a gap. It runs inside the capture process, and what it
+observes is every keystroke and every pointer event the session sees — including the ones the
+redaction of [functional-spec.md §2](./functional-spec.md) removes from the stream, since redaction
+acts on an event the facility has already delivered. A component in that position is the last one that
+should escape a dependency gate. So it is recorded under **the dependency rule of §2** in full, and
+that rule's blocking outcomes apply here unchanged: an out-of-support facility, an applicable advisory
+with no fixed version available, or an entry in its graph with no named accountable maintenance owner
+blocks this phase. Two of the rule's clauses do most of the work on this particular component. Its
+version and support state are properties of the target platform rather than of anything the deployment
+installs, so the record names them per target and names who in the deployment tracks that platform's
+advisories and acts on them — "the platform supplies it" identifies no addressee. And whatever the
+facility pulls in behind its interface belongs in the same bill of materials, at the versions resolved
+on the target, because the code that will handle raw input events is not necessarily the interface the
+application calls.
+
 **Sequencing:** after Phase 1, which supplies the frame stream. The gate compares a frame against the
 previous retained frame, so it has nothing to compare until frames arrive.
 
 **Exit criteria:**
 
 - Every record kind carries a monotonic time value from the session's single clock and a sequence
-  number unique within the session, and both are stamped at the moment of acquisition rather than at
-  the moment of writing.
-- The merge order is demonstrated as the ascending lexicographic comparison of the triple that
-  [functional-spec.md §2](./functional-spec.md) defines — monotonic time, then kind rank over the
-  complete rank function, then the sequence number — on records of every kind the format defines
-  rather than on frames and input events alone. The rank is what makes the order total, and its
-  load-bearing consequence is the one a reviewer reads the timeline for: at equal monotonic time an
-  input record carrying an operating-system event sorts before a frame record, so the event that
-  caused a change precedes the frame showing it. An input record carrying an annotation revision
-  shares that rank without carrying that causal reading, and binds to its frame by the target field
-  the same section defines.
-- An interrupted session leaves a readable stream, to exactly the guarantee
-  [functional-spec.md §5](./functional-spec.md) states and under the assumptions it names (§3.3).
+  number unique within the session, each assigned at the moment
+  [functional-spec.md §2](./functional-spec.md) fixes for it and not at the other: the time value is
+  stamped where the record is acquired, so that the timeline records the user's actions rather than
+  the pipeline's latency, and the sequence number is assigned by the session's single writer as it
+  serialises the record. This phase records that no acquiring thread issues a sequence number of its
+  own, because two allocation points would leave the equal-time rule below to a race between
+  threads.
+- The merge order is demonstrated as the ascending lexicographic comparison of the pair that
+  [functional-spec.md §2](./functional-spec.md) defines — the monotonic time value, then the
+  sequence number — on records of every kind the format defines rather than on frames and input
+  events alone. Nothing else enters the comparison: not the civil-time field, not a record's kind.
+  The load-bearing consequence is the one a reviewer reads the timeline for, and this phase
+  demonstrates it as a property of how the writer allocates rather than of how the reader compares.
+  Within a group of records sharing one monotonic time value the session's single writer serialises,
+  and therefore numbers, input records before frame records; at equal time the input record's
+  sequence number is the lower one, so the two-key comparison places the event that caused a change
+  before the frame showing it with no exception inside the comparison itself. The exit records both
+  halves — that the reader compares the pair and nothing else, and that the writer's allocation order
+  at equal time is the one just stated.
+- An interrupted session leaves a readable stream **to the failure mode the deployment declared and to
+  no wider one** (§3.3). The declared mode — process-level interruption, system-level interruption, or
+  neither — is named in the phase's result and recorded in the session's own `start` configuration, and
+  the demonstration is an interruption of the kind that mode describes: the process killed for the
+  process-level declaration, and power loss or a stopped kernel for the system-level one. A stream that
+  survived a killed process establishes the process-level mode and says nothing about the other, so the
+  exit is met by the demonstration matching the declaration rather than by the stronger-sounding claim.
+  In every mode the result of every append, flush and synchronisation is checked, a failure is reported
+  and the record treated as not written, and nothing further is appended to a stream after a failed or
+  short append. Where system-level durability is the declared mode, the exit additionally requires the
+  per-record durable synchronisation **and** the containing directory's metadata synchronisation of
+  §3.3, both demonstrated, since the first without the second leaves a record on the device that
+  nothing can reach by name. Media or filesystem failure is outside every mode and outside this exit:
+  what answers it is the second copy the artefact inventory below carries, not the write path. Where the
+  host supports neither mode the exit is met by recording the narrowed guarantee — complete lines parse
+  — and stating that narrowing rather than the stronger one, all on the terms
+  [functional-spec.md §5](./functional-spec.md) sets.
 - The change gate is implemented to the score contract of
   [functional-spec.md §3](./functional-spec.md), with the per-pixel sensitivity, the admission
   threshold and the quiet-frame count that closes a segment configurable, and with the score's
   definition, range, whole-frame domain, first-frame rule and inclusive comparison fixed.
 - Segment boundaries appear in the stream as records rather than being left for a consumer to
   re-derive.
+- The annotation revision records of [functional-spec.md §5](./functional-spec.md) are represented in
+  the stream to the extent that contract settles them: a stable annotation identifier under the
+  character set that section specifies, the three revisions it defines, the field binding a revision
+  to the attached frame's sequence number, current state as the fold of one identifier's revisions in
+  ascending sequence order, undo as that fold stopped one revision short, and reopen as a
+  deterministic reconstruction from the stream alone. Which of the format's record kinds carries a
+  revision is **recorded as open** by that same section, and this phase adopts neither candidate
+  carrier, so this exit is **blocked pending that specification decision**: the fold, the ordering
+  and the determinism are demonstrable ahead of it and are demonstrated here, while the on-disk
+  carrier cannot be fixed until the decision is taken.
 - Where the backend supplies a presentation timestamp it is recorded on frame records as
   supplementary media metadata, and it is used for no ordering decision (§3.1).
 - Key redaction is in force before any stream is retained: key content is excluded where the
@@ -423,14 +600,68 @@ previous retained frame, so it has nothing to compare until frames arrive.
   and the later aggregation consume — per [functional-spec.md §2](./functional-spec.md). This is an
   exit of this phase and not of a later hardening pass, because a character once written into the
   stream cannot be unwritten by any policy applied afterwards.
+- The platform input-hook facility, and everything its use brings in behind that interface, is
+  recorded under **the dependency rule of §2** — the five facts per component, the complete resolved
+  bill of materials direct and transitive at the versions resolved on the target with the advisory
+  review run over that whole graph, and a named accountable maintenance owner for every entry whose
+  responsibility continues past this exit. An out-of-support component, one carrying an applicable
+  advisory with no fixed version available, or an entry with no named owner leaves this exit **unmet
+  and blocks the phase**, and the record states which component and which finding did it. Phase 1's
+  record does not discharge this exit: the components are different ones, and the component this
+  phase adds is the one that sees every keystroke — the last addition in the plan that should reach a
+  deployment ungated.
 - The note stream is written under the storage protections and the identifier rules of
   [functional-spec.md §5](./functional-spec.md): the stream and the image directory created
   accessible only to the owning account at the moment of creation, under a configured storage root
   that is never derived from record content, with `session_id` and `annotation_id` restricted to the
-  specified character set, every path built by a canonical join and verified after resolution to lie
-  inside that root, a refused path never rewritten, the integrity metadata written with each
-  retained image, deletion under the retention policy recorded rather than inferred from an
-  unresolvable reference, and encryption at rest available as a configuration option.
+  specified character set and the session directory created exclusively so a collision fails the
+  start rather than joining an existing session, the image extension drawn from the application's
+  allowlist, every artefact created and opened relative to an already-open handle on that root
+  following no link or reparse point, and deletion under the retention policy leaving each record and its
+  reference in place, so that a reference which no longer resolves reads as that deletion rather
+  than as a damaged stream. Containment is demonstrated by how the files are opened and not by a
+  pathname check performed before opening them: the check on the resolved path stays as a cheap
+  early rejection, and the exit is the descriptor-relative behaviour, because a check and a
+  subsequent open on the same name are two operations with a window between them.
+- The integrity metadata written with each retained image is demonstrated to do what
+  [functional-spec.md §5](./functional-spec.md) claims for it and is recorded as doing no more: a
+  one-sided change — a truncated or corrupted image, or an image replaced under an unchanged record —
+  is detected, and a change made to the image and the record together is not, because the digest is
+  unkeyed and lives in the same writable artefact. Where the deployment's threat model includes an
+  actor who can write to that artefact, this exit is met only with authentication rooted outside it,
+  and where it does not, the exit is met by recording that the pair is a consistency check rather
+  than evidence of origin. An exit claiming authenticity from the digest alone is not met.
+- **Every artefact this phase causes to exist is inventoried, owned and bounded, not just the two it
+  writes directly.** The exit is the complete inventory of
+  [functional-spec.md §5](./functional-spec.md) instantiated for this deployment: each entry present
+  with a named accountable owner, access restriction applied at creation by whoever creates it, a
+  retention deadline recorded against it, and the erasure limits written down as they actually are
+  rather than as a deletion feature would imply. This phase is where the estate stops being two
+  files: the correlated timeline it builds adds an authorisation audit log and, where the deployment
+  keeps one, an operational log of its own removals; its writer adds temporary and staged files, and any encoded session video, exported copy,
+  reopen working copy, backup or snapshot belongs to the same inventory from the moment it can
+  exist. Two entries need their owner named rather than assumed, and are the ones an inventory
+  usually omits: a backup or filesystem snapshot the application neither created nor can reach, and
+  any external component that receives recognised text or derived actions. For both, the exit is met
+  by naming the holder and what that holder has accepted, and it is not met by leaving the entry
+  unowned. Where a copy leaves the storage root the exit requires transit protection and a
+  destination that accepted the same obligations, since access restriction does not travel with a
+  file that is copied out from under it.
+- **Production use of what this phase builds is a blocked state until those controls are in force,
+  and "available" does not satisfy this exit.** The distinction is the whole point of the criterion:
+  a configuration option that exists and is switched off protects nothing, and a phase that exits on
+  the option's existence has verified the option rather than the protection. So the exit is the
+  observed state of each control on the deployment that will run — every inventory entry owned, its
+  access applied at creation, its retention deadline set, encryption at rest actually in force where
+  the threat model requires it with the key material held by a named owner under a stated lifecycle,
+  authenticated integrity present on the same condition, and both audit logs written and themselves
+  inventoried. A missing control leaves this exit **unmet and blocks production use**; it does not
+  convert into a risk accepted on the phase's behalf by nobody. All of it is stated as requirements
+  with identifiers in [functional-spec.md §5](./functional-spec.md), so each is checkable
+  individually against that section rather than as a single judgement about readiness. This phase
+  cannot itself decide the retention periods, which are a product decision this request does not
+  supply; where none is supplied that part of the exit is **recorded as blocked pending that
+  decision**, and the rest of the criterion stands and is evaluable without it.
 
 ## 3.1 Four adjacent properties, and why the clock is the application's
 
@@ -480,19 +711,57 @@ the score contract, and it is not configured into existence.
 
 ## 3.3 What "readable after interruption" means as an exit
 
-The exit is stated against a mechanism because the format alone does not bound loss. A line-delimited
-stream guarantees only that a complete line parses independently; a half-written record is invalid
-regardless of how its fields are ordered.
-[functional-spec.md §5](./functional-spec.md) therefore states the mechanism the guarantee rests on —
-each record serialised in full, newline-terminated, written with a single append that is flushed
-before the write counts as complete — and the guarantee that follows: every flushed record survives an
-abrupt termination, at most the final unflushed record is lost, and no record depends on a later
-record or on a session footer.
+The exit is stated against a mechanism **and against a named failure mode**, because neither the
+format nor the word "flushed" bounds loss on its own. A line-delimited stream guarantees only that a
+complete line parses independently; a half-written record is invalid regardless of how its fields are
+ordered. And "interruption" is three different events with three different answers, which is the
+distinction [functional-spec.md §5](./functional-spec.md) draws and the one this exit is written
+against:
 
-This phase's exit is met by demonstrating that guarantee on a session terminated without warning, and
-by recording which of the two guarantees the host actually provides. Where append-and-flush durability
-is unavailable the guarantee narrows to what the format supports on its own, and the phase records the
-narrowed guarantee rather than claiming the stronger one.
+- **Process-level interruption** — the application is killed, it crashes, or the operating system
+  stops it. A record whose append the operating system has accepted survives this, because the file
+  it went into does not belong to the process. What does not survive is anything the writer was still
+  holding in a buffer of its own, which is why the mechanism is one checked append per record, each
+  record serialised in full and newline-terminated, with no record held in a buffer of the
+  application's own between records: a writer that flushes every few records loses whichever ones were
+  pending, and that count is a property of a buffer size rather than of any contract.
+- **System-level interruption** — the machine loses power, the kernel stops, the host is destroyed
+  mid-session. An append the operating system accepted may not have reached the storage device, so
+  survival here does **not** follow from the append returning. It requires the platform's durable-sync
+  primitive to have completed for the file, and the containing directory's metadata to have been
+  synchronised as well, both per record. The second half is the one a deployment forgets and it is not
+  optional: a synchronised file under an unsynchronised directory entry survives as content nothing
+  can find, and every artefact this phase writes is reached by name. The cost is a synchronisation per
+  record and it is the deployment's to accept; a deployment unwilling to pay it declares the
+  process-level mode instead of performing the cheaper mechanism and describing the stronger one.
+- **Media and filesystem failure** — the device fails, or the filesystem is corrupted. **No promise is
+  made here at all**, by this phase or by the specification it implements, because no ordering of
+  writes answers a device that has stopped working. What answers it is a second copy, which is an
+  entry in the artefact inventory this phase's exits already require, carrying the same owner, access
+  restriction, retention deadline and transit obligations as every other entry — a backup rather than
+  a durability mechanism, and never described as one.
+
+Which of the first two modes is in force is a **deployment declaration and not a property this
+roadmap can assert**, since the mechanism differs per host and the two promises differ by the whole of
+power loss. The declaration is recorded in the session's own `start` configuration, so a stream says
+which mode produced it and a reader of the stream is not left to infer the promise from the word
+"flushed". No guarantee wider than the declared mode is stated to a user or to a consumer, and the
+declared mode is what this phase's exit is evaluated against — not the strongest-sounding of the
+three.
+
+Checking is a requirement in every mode, including the cheapest one. The result of every append, every
+flush and every synchronisation is examined; a failure is reported through the session's own error path
+and the record is treated as not written, because an unchecked write is a record silently absent from a
+stream in which absence is undetectable — one line fewer looks exactly like one event fewer. A short
+append carries its own rule: it leaves a partial line, a partial line is discardable only as the
+stream's last line, and so the writer appends nothing further to that stream after a failed or short
+append and the session's recording path ends there and reports why, rather than continuing over a file
+whose next line would turn a discardable tail into a corrupt middle.
+
+Where the host supports neither mode — an append whose result the platform cannot report, or storage
+that acknowledges writes it has not taken — the guarantee narrows to what the format supports on its
+own, which is that complete lines parse, and the phase records that narrowed guarantee rather than
+claiming either of the stronger two.
 
 # 4. UI Shell
 
@@ -500,18 +769,26 @@ Phase 3 of five. Capture and correlation now run; this phase gives a user someth
 and control. It is the phase whose exits are most conditional, because a public declaration in the
 display module does not imply that the active backend implements it.
 
-**Scope:** preview, controls and annotation rendering. Preview is the continuous presentation of
-captured frames; controls are session start and stop and the gate's sensitivity and threshold;
-annotation rendering is the composition of marks, boxes and text onto the frame before it is
-displayed. Outside this phase's scope: the persistent annotation model, which
-[functional-spec.md §6](./functional-spec.md) assigns to the application and
-[functional-spec.md §5](./functional-spec.md) specifies as revision records in the same stream, and
-any second platform.
+**Scope:** preview, controls, annotation rendering, the annotation lifecycle and the timeline
+scrubber. Preview is the continuous presentation of captured frames; controls are session start and
+stop and the gate's sensitivity and threshold; annotation rendering is the composition of marks,
+boxes and text onto the frame before it is displayed. The annotation lifecycle is the five operations
+[functional-spec.md §6](./functional-spec.md) assigns to the application — create, update, delete,
+undo and reopen — driven over the revision records
+[functional-spec.md §5](./functional-spec.md) specifies and Phase 2 represents in the stream; this
+phase owns them because they are interface behaviour, and no later phase would pick them up. The
+scrubber is the frame-index control that same interface section requires. Outside this phase's scope:
+any second platform, and the format-level representation of a revision record, which is Phase 2's
+(§3).
 
 **Inputs:** the display and interaction verdicts with the backend condition each carries, assessed in
 [current-state-capability-map.md §3](./current-state-capability-map.md) and inventoried in
 [technical-inventory.md §3](./technical-inventory.md); the interface requirements and their verdicts,
-from [functional-spec.md §6](./functional-spec.md); and the finding that display and interaction
+from [functional-spec.md §6](./functional-spec.md); the revision and fold contract the annotation
+lifecycle is driven against — the three revisions, the binding to the attached frame, current state
+as the fold of one identifier's revisions in ascending sequence order, and the determinism that
+makes a reopened stream reconstruct the same state — from
+[functional-spec.md §5](./functional-spec.md); and the finding that display and interaction
 parity is backend-conditional rather than platform-conditional, from
 [platform-capture-gap-assessment.md §7](./platform-capture-gap-assessment.md).
 
@@ -522,8 +799,28 @@ gate carries a declared default of OFF [CMakeLists.txt:299], so a control surfac
 adds that toolkit to every deployment. A control surface built from trackbars and keyboard input adds
 nothing, and is preferred for that reason under §1.2.
 
+"Nothing" is stated here as a considered answer rather than left as a silence, because a phase that
+says nothing about dependencies is indistinguishable from a phase that did not look. The considered
+answer is that this phase introduces no component of its own: the display backend it uses, the toolkit
+libraries that backend sits on and this library itself are already entries in the bill of materials
+Phase 1 (§2) recorded, at the versions that build resolved. They do not leave **the dependency rule of
+§2** by being inherited rather than added — the named accountable maintenance owner of each entry
+carries the responsibility past Phase 1's exit date, so an advisory published against the display
+toolkit while this phase is running already has an addressee, which is the whole point of the owner
+being named rather than the review being filed. What would change the answer is the one branch above:
+a control surface that depends on the single-toolkit button control adds that toolkit and its own
+resolved graph, direct and transitive, as a genuine new addition, and it enters under the same rule
+with its own five facts, its own place in the bill of materials and its own named owner — blocking
+this phase on the same terms if any of the three is missing. Carrying a component's whole lifecycle,
+and not only its installation, is a further reason §1.2 prefers the surface that adds none.
+
 **Sequencing:** after Phase 2, which supplies both the frames the shell previews and the timeline it
-presents.
+presents. The annotation-lifecycle exits additionally consume the representation Phase 2 establishes,
+so they close only once the carrier decision that
+[functional-spec.md §5](./functional-spec.md) **records as open** is taken. The operations, the fold
+and the determinism are specified here so that the exit is evaluable the moment it is, and until then
+those exits are **blocked pending that specification decision** while every other exit in this phase
+stands on its own.
 
 **Exit criteria:**
 
@@ -544,6 +841,35 @@ presents.
 - Annotation rendering is demonstrated as composition into the frame before display, and the
   persistent annotation state it implies is recorded as belonging to the application rather than to
   this module.
+- Each of the five annotation operations is demonstrated end to end over the revision records of
+  [functional-spec.md §5](./functional-spec.md): create writes a revision carrying the annotation's
+  identifier with its initial geometry and text; update writes one carrying the identifier and the
+  changed fields only; delete writes a tombstone revision carrying the identifier and no payload;
+  undo is demonstrated as the fold of that identifier's revisions stopped one revision short of the
+  latest, with no revision removed from the stream; and reopen is demonstrated as a deterministic
+  reconstruction of every annotation's current state from the stream alone, with no side file and no
+  in-memory state carried across the restart. The demonstration binds each revision to the frame it
+  is attached to and folds one annotation's revisions in ascending sequence order — the fold order
+  [functional-spec.md §5](./functional-spec.md) fixes for a single annotation, which is not the
+  timeline merge order Phase 2 established, that being over records of every kind on the pair of
+  monotonic time and sequence. These exits inherit Phase 2's open carrier item, as **Sequencing**
+  above records.
+- The timeline scrubber is demonstrated as a trackbar over the index of the session's admitted
+  frames, created and read through the trackbar surface with its bounds and position both settable
+  and readable [modules/highgui/include/opencv2/highgui.hpp:517,558,571,532,545], and the backend it
+  was verified against is named — the same backend-conditional discipline every other interaction
+  exit here carries, because a backend that logs a trackbar creation as unsupported and does nothing
+  with it [modules/highgui/src/window_framebuffer.cpp:327-333] yields no scrubber at all. Where the
+  named backend does not implement trackbars the exit is met by reporting the scrubber unavailable
+  rather than by presenting a control that does not move.
+- This phase's dependency answer is recorded as an answer rather than omitted as a nil return: either
+  that no component was added and the entries this phase relies on remain under **the dependency rule
+  of §2** with their bill-of-materials versions still those of the build under test and their named
+  maintenance owners still current, **or** — where the single-toolkit control was required — that
+  toolkit and its resolved graph recorded in full under that rule. An out-of-support component, one
+  carrying an applicable advisory with no fixed version available, or an entry with no named owner
+  leaves this exit **unmet and blocks the phase** exactly as it would in the phase that first
+  installed it, since an inherited component is not a reviewed one.
 - The recording indicator is verified to be visible for as long as capture is active, and the
   backend it was verified against is named — the same discipline as every other interaction exit
   here. It is composed into the presented frame rather than carried by the window title, which
@@ -600,12 +926,20 @@ module's own account of itself as a facility for trying functionality quickly an
 general interface toolkit, and this phase's shell is a preview surface with simple controls rather
 than a substitute for one.
 
-Which toolkit is not decided here, and this document names none: no interface toolkit or component
-library is specified for this application, and naming one would be an invention rather than a
-requirement — the same failure as asserting a capability no source establishes. The phase exit is met
-by a shell that works on the backend it names, with the features the backend does not support
-reported as unavailable; choosing a toolkit for a production interface is a decision outside this
-roadmap.
+Which toolkit is a decision this roadmap requires and does not take. No interface toolkit or
+component library is specified for this application, and naming one here would be an invention rather
+than a requirement — the same failure as asserting a capability no source establishes. So the
+decision sits **inside** this roadmap as a product decision that is **blocked pending a user-supplied
+choice**, and what it gates is stated rather than left implicit: until it is taken, the production
+interface — multi-panel layout, docking, menus and text entry, which
+[functional-spec.md §6](./functional-spec.md) finds absent from the module — cannot be built, and no
+phase in this roadmap can exit on one. Placing it outside the plan would have left the target
+application unreachable by any phase, which is the failure this entry exists to prevent.
+
+This phase's own exit is unaffected by that block, and that is the point of separating them: it is
+met by a preview-and-simple-controls shell that works on the backend it names, with the features that
+backend does not support reported as unavailable. The blocked decision is recorded against the
+production interface, not against the shell.
 
 # 5. Cross-Platform Capture Parity
 
@@ -651,6 +985,24 @@ it brings with it the initialisation-order condition Phase 1 (§2) records for t
 [platform-capture-gap-assessment.md §2](./platform-capture-gap-assessment.md) establishes, unchanged
 and not restated.
 
+Every addition here is recorded under **the dependency rule of §2** in full — its five facts per
+component, its complete resolved bill of materials direct and transitive with the advisory review run
+over that whole graph, and its named accountable maintenance owner per entry continuing past this
+phase's exit — and an out-of-support component, one carrying an applicable advisory with no fixed
+version available, or an entry with no named owner blocks this phase in the same way. The rule is not
+restated because it does not change; what changes is how much it has to cover.
+This phase adds the most components of any in the plan and the three on the consent-mediated target
+are the ones a dependency record most easily loses: the portal client and the media-transport client
+are host-side, so their version and support state are properties of the target distribution rather
+than of anything the deployment installs, and the source-element plugin is a package whose own
+version is distinct from the media framework's. Each is recorded separately at the version actually
+resolved on each target, because the answer differs per target and a single row covering "the media
+framework" would hide that. The bill of materials is per target for the same reason: each target
+resolves its own graph, and an entry's version, support state and owner can each differ across them.
+Where a target's own components are what fail the support or advisory check, the phase records the
+divergence against that target and does not assert parity for it, which is the same outcome the
+criteria below already require for a blocked bridge.
+
 **Sequencing:** after Phase 3, so that the contract being held constant already exists and has been
 exercised end to end on one platform. Attempting parity before there is something to be at parity
 with produces three implementations and no contract.
@@ -667,6 +1019,42 @@ with produces three implementations and no contract.
   requested and granted, a token that does exist is single-use and replaced on each successful
   restore, and a stored session that cannot be restored is prompted for as it would be without one,
   all of which [platform-capture-gap-assessment.md §3](./platform-capture-gap-assessment.md) states.
+- **Where a restore token exists, its handling is exercised as sensitive capability state and not
+  merely as a string that makes the second run quieter.** That is what the token is: the one artefact
+  able to carry a screen-capture grant from one run into the next, so an actor who reads it inherits
+  the quieter path the user granted to this application. The exit is therefore the five owners
+  [platform-capture-gap-assessment.md §3](./platform-capture-gap-assessment.md) assigns, each
+  demonstrated rather than asserted. The stored value is held in the platform's protected
+  application storage scoped to the account that owns the session, with no second copy anywhere and
+  none of it in an environment variable, a command line or a configuration file that travels with
+  the output. It appears in no note record and in no log line, diagnostic, error message or crash
+  report — checked by searching the artefacts a run actually produced for the token's value, which
+  is the only form of this check that establishes anything, and the artefacts searched are the whole
+  inventory Phase 2 (§3) established rather than the note stream alone. Replacement after a
+  successful restore is atomic, demonstrated by interrupting between the old value's use and the new
+  value's arrival and observing that what remains is one intact value and not a torn one, with an
+  unreadable stored value discarded and the session authorised afresh rather than retried against
+  it. Erasure is demonstrated on revocation, at logout or uninstall, and on a failed policy check.
+  And the application's own authorisation gate is exercised both with a token present and with none,
+  showing the gate's outcome unchanged by the token's presence — a possessed token authorising a
+  session by itself is this exit failing, not passing, since it would mean the application had
+  delegated its own decision to a value on disk. Where the target grants no token, the exit is met
+  by recording that no token was granted, which is the same evidence in the negative and not an
+  exemption.
+- The consent and recording-visibility behaviour of **each additional platform's selected concrete
+  route** is recorded from observation on that target, on the terms Phase 1 (§2) sets for its own
+  route: what selection step appeared if any, whether the platform drew a recording indicator and
+  under what version and capability, and what the route requested as distinct from what the platform
+  did. It is not inherited from the mechanism family, and it is not inferred from another target's
+  answer. This is where the parity claim is at most risk of being made on the wrong evidence: two
+  targets can front the same mechanism family and reach it by routes that differ on both axes, so
+  the comparison [platform-capture-gap-assessment.md §7](./platform-capture-gap-assessment.md) draws
+  is only sound over routes as instantiated, and the per-route positions it rests on are
+  [platform-capture-gap-assessment.md §1](./platform-capture-gap-assessment.md)'s. A target whose
+  route supplies neither a selection step nor an indicator is not a divergence to record against the
+  contract, because the contract never depended on either; what would be a divergence is the
+  application's own authorisation or recording state differing across targets, and that is the exit
+  below.
 - Where validating the candidate chain of §5.2 establishes a blocker on one of its named items, the
   phase **records that as unresolved**, names the blocking item, and does not assert parity for that
   platform.
@@ -692,17 +1080,26 @@ are transported**, which is the comparison
 [platform-capture-gap-assessment.md §7](./platform-capture-gap-assessment.md) draws across the three
 assessments, on the two axes §1.1 works from. The X11 path admits an unmediated read
 [platform-capture-gap-assessment.md §2](./platform-capture-gap-assessment.md). The Windows path
-offers both postures at once: one mechanism normally initiated through a system picker and therefore
-potentially interactive, and others with no operating-system step at all, with the modern mechanisms
-bound to a graphics device
-[platform-capture-gap-assessment.md §1](./platform-capture-gap-assessment.md). The mediated Linux
+offers both postures at once, and which one a build gets is decided by the route rather than by the
+platform: one mechanism has a picker-led initiation path whose outcome is interactive, the same
+mechanism has a second initiation path that addresses a target directly and asks nothing, the other
+mechanisms carry no operating-system step at all, and the modern ones are bound to a graphics device
+[platform-capture-gap-assessment.md §1](./platform-capture-gap-assessment.md). The route reachable
+from here is not the picker-led one, so on the evidence this dossier has, the Windows target's
+practical posture is the unasked one. The mediated Linux
 path negotiates a session with a separate service, under a policy the application does not own, and
 delivers frames over a separate transport
 [platform-capture-gap-assessment.md §3](./platform-capture-gap-assessment.md).
 
 What follows for the contract is the shape §1.1 already committed to, and it is three things rather
 than one. A platform authorisation step — additional to the application's own, and potentially
-interactive in its outcome — on two of the three targets. A session lifetime that only one target
+interactive in its outcome — guaranteed by contract on one target, available on a second through an
+initiation path the reachable route does not take, and absent from the third; which means the
+contract must accommodate the step without any target being relied on to provide it, and means the
+count is a property of the routes a build selects and is therefore an output of this phase rather
+than an input to it. A recording indicator divides the same way and is likewise not relied on: where
+a platform draws one it is additional, and the reachable Windows route requests none. A session
+lifetime that only one target
 imposes, which is what is genuinely distinctive about the mediated path — a source selection
 callable once per session, an optional persistence grant, a single-use restore token where one is
 returned, and a transport addressed separately from the session. And the application's own
@@ -828,11 +1225,41 @@ stream from Phase 2, which is what actually knows a click or a keystroke occurre
 aggregation taxonomy with its rule set and its confidence semantics, from
 [functional-spec.md §4](./functional-spec.md).
 
+Provenance and licence are the wrong two facts to stop at, and stopping there is the specific way an
+asset input goes wrong. Provenance says where an artefact is claimed to be from and licence says what
+may be done with it; neither says that the bytes in hand are the bytes that source published, and
+neither says anything about what happens when they are parsed. A model file, a configuration file, a
+character vocabulary, an external engine's language data and a label set are all inputs read by
+native code before any recognition happens, so each is admitted on six facts rather than two. Its
+origin is the publisher's own distribution channel, named specifically, and not a mirror, a
+model-sharing account of unclear ownership or a link from a paper. Its version is exact and pinned to
+an immutable identifier, since an asset name that resolves to different bytes over time is not
+pinned. Its integrity is established by a digest or signature obtained from the publisher through a
+path independent of the artefact itself, verified before first use and re-verified whenever the
+artefact changes — a digest published beside the file it describes, or recomputed from the copy just
+downloaded, establishes only that a download completed. Its declared format, expected size and the
+resources its parse may consume are stated in advance, so an asset that is not what it claims to be
+is refused on a stated bound rather than discovered during a parse. Its parsing runs at the least
+privilege that works, and where the format's parser is large or the asset's origin is anything short
+of first-party, that parse is isolated from the session's own data and from the note stream. And each
+asset is entered in the bill of materials alongside the components of §2, at the exact version
+resolved, reviewed for published advisories against the asset, against the runtime that loads it and
+against that runtime's own resolved graph — the parse happens below the interface the application
+calls, which is why the graph rather than the named runtime is what the review covers. An asset
+failing any of the six is not admitted as an input to this phase, which is a stronger statement than
+it appears: it means the phase cannot begin on an asset that merely looks right, and the licence
+record — which is a real requirement and stays — is not what admits it.
+
 **Added dependencies:** on the in-library route, the model assets and the vocabulary — artefacts
 rather than a library, which is why §1.2 prefers this route. On the alternative route, an external
 recognition engine and its language data, which adds a native library with its own licensing,
-packaging and build integration. Action extraction on the two routes this phase implements adds
-nothing: it consumes the event stream Phase 2 already produces.
+packaging and build integration. That engine is a native component and is recorded under **the
+dependency rule of §2** on the same terms as any other — its five facts, its complete resolved bill
+of materials direct and transitive with the advisory review run over that whole graph, and its named
+accountable maintenance owner continuing past this phase's exit — in addition to the asset rules its
+language data carries as an asset. Action extraction on the two routes this phase implements adds
+nothing: it consumes the event stream Phase 2 already produces, so its dependency answer is that
+considered nothing rather than an unexamined one.
 
 **Sequencing:** last. Text extraction needs admitted frames and their changed regions; action
 extraction needs the correlated timeline; and both write into a record taxonomy Phase 2 established.
@@ -845,21 +1272,75 @@ extraction needs the correlated timeline; and both write into a record taxonomy 
   value where one exists; none was supplied with this request, so this exit is **recorded as blocked
   pending that product decision**.
 - **Action exit.** The aggregation taxonomy is enumerated and closed, each entry's rule is defined,
-  confidence is recorded as a rule-satisfaction indicator rather than a probability, and the outputs
-  are written into the note contract. Action-coverage thresholds are the same kind of product
+  confidence is recorded as the two-valued rule-satisfaction indicator rather than a probability, and
+  every derived action is written where [functional-spec.md §4](./functional-spec.md) places it: as an
+  entry in the actions array inside the extraction object of the frame record the action anchors to,
+  selected by the deterministic anchor rule that section fixes, with no new record kind introduced.
+  Each entry is verified to carry all of its specified fields — its own identifier, its type drawn
+  from the closed taxonomy, the monotonic start and end values taken from its contributing events
+  rather than read live, the sequence numbers of the input records that contributed to it, the anchor
+  frame's own sequence number written explicitly so the entry resolves when read out of context, the
+  normalised source identity, the confidence indicator, and the geometry where the rule produced one
+  — since those linkage fields are what makes an action re-derivable from the stream instead of an
+  assertion in it. An entry missing any of them fails this exit. The array is populated independently
+  of text extraction, and the mixed case where one half succeeded and the other did not is carried by
+  the extraction status the format already defines rather than by any addition to the taxonomy.
+  Action-coverage thresholds are the same kind of product
   decision, so where none is supplied that part of the exit is **recorded as blocked pending that
   decision** while the taxonomy and rule definitions remain evaluable as written.
 - Every asset carries a recorded provenance and licence, since model licensing varies independently
   of this library's.
+- **Every asset is admitted on the six facts the inputs section above requires, and the exit is the
+  verification rather than the record of it.** Named channel, exact immutable version, integrity
+  verified against the publisher through a path independent of the artefact, declared format with
+  stated size and resource bounds, least-privilege or isolated parsing, and advisory review of the
+  asset and of the runtime that loads it. The evidence is what was actually done: the digest or
+  signature compared and against which published value, the bound that a malformed input was
+  observed to be refused on, and the privilege the parse actually ran at. An asset whose bytes cannot
+  be tied to its publisher, or whose version cannot be pinned to something immutable, **is rejected
+  and this exit is unmet** — the phase does not proceed with it under a note, because a recognition
+  model is native-code input on every frame the session admits and a wrong one is wrong on all of
+  them. The same terms apply to the external-engine route without change: its language data is an
+  asset by this definition, and the engine itself is additionally a native component under **the
+  dependency rule of §2**, which brings its complete resolved dependency graph and a named accountable
+  maintenance owner with it, so that route is admitted on both sets rather than on either — and an
+  engine that is out of support, unpatched against an applicable advisory, or unowned blocks this
+  phase on the rule's own terms.
+- An asset that changes after admission is treated as a new asset and re-verified, and a build that
+  cannot show which exact asset version produced a recorded evaluation result **does not meet the
+  text exit** — an accuracy figure that cannot be attributed to specific bytes is not attributable
+  to anything, which is the same reason the evaluation is against a labelled sample of the actual
+  screen content rather than a general corpus.
 - Extraction failure is demonstrated to be independent of capture: a frame whose extraction failed is
   still an admitted frame and still produces a record, with the four-state extraction status
   [functional-spec.md §5](./functional-spec.md) specifies.
 - Extraction output is subject to the same storage protections and retention rules as the records it
   enriches — owner-only permissions applied at creation, the configured storage root, the restricted
-  identifiers with their canonical join and post-resolution containment check, and deletion recorded
-  rather than inferred — per [functional-spec.md §5](./functional-spec.md). Recognised text is a
-  transcript of whatever was on the screen, so an extraction payload written outside those rules
-  would reopen on the derived data exactly what Phase 2 closed on the source records.
+  identifiers created and opened relative to the open root handle, and deletion under the retention
+  policy leaving each record and its reference in place, so that a reference which no longer
+  resolves reads as that deletion — per [functional-spec.md §5](./functional-spec.md). Recognised
+  text is a transcript of whatever was on the screen, so an extraction payload written outside those
+  rules would reopen on the derived data exactly what Phase 2 closed on the source records. It is worse than a reopening,
+  in fact: a screenshot has to be looked at, while a transcript of the same pixels is searchable, so
+  the derived artefact is the more exposing of the two and is the one an inventory built around
+  images tends to miss.
+- **The artefact inventory Phase 2 (§3) established is extended to everything this phase adds, and
+  the deployment gate is re-evaluated over the extended set.** This phase creates artefacts the
+  earlier inventory could not have listed, and each takes an owner, an access restriction applied at
+  creation, a retention deadline and its erasure limits on the terms
+  [functional-spec.md §5](./functional-spec.md) sets: the extraction payloads themselves, any
+  intermediate crop or preprocessed region written to disk on the way to a model, whatever the
+  runtime caches of a loaded asset, and any store belonging to an external component. The external
+  case is the one that needs naming rather than assuming, because it is where the estate leaves the
+  machine: an external recognition engine or service that receives frames or regions is a processor
+  of this material, recorded as such before it is used, bounded to the purpose the session was
+  authorised for, and inventoried with its holder named — and where such a component retains
+  anything, the phase records what it retains and for how long, or records that it could not
+  establish either, which is itself the finding. Passing pixels to something outside the session and
+  treating the result as though only the result existed is the failure this exit prevents. Since the
+  gate of Phase 2 is stated over the whole inventory rather than over a fixed list, extending the
+  inventory re-opens it: **production use stays blocked until the controls are in force for the new
+  entries too**, on the same terms and with "available" no more sufficient here than there.
 
 ## 6.1 The condition every text verdict carries, and where confidence stops
 

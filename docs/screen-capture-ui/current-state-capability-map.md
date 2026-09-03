@@ -317,7 +317,7 @@ installed public header, and each entry earns its place in the chain:
 | `findContours` | [modules/imgproc/include/opencv2/imgproc.hpp:3782] | Returns region outlines where a box is too coarse |
 | `Canny` | [modules/imgproc/include/opencv2/imgproc.hpp:1639] | Edge structure, where change is better described by edges than by area |
 | `resize` | [modules/imgproc/include/opencv2/imgproc.hpp:2096] | Runs the chain at a reduced scale, trading per-frame cost against spatial precision |
-| `cvtColor` | [modules/imgproc/include/opencv2/imgproc.hpp:3526] | Reaches a single-channel representation from a four-channel screen-shaped frame |
+| `cvtColor` | [modules/imgproc/include/opencv2/imgproc.hpp:3526] | Reaches a single-channel representation from a screen frame that may present three or four channels — nothing in this tree fixes the count, which follows from the source element or demuxer and the caps negotiated on open (§1.5) — so the conversion code is selected from the format actually observed rather than assuming an alpha channel [modules/imgproc/include/opencv2/imgproc.hpp:3518,3523] |
 | `matchTemplate` | [modules/imgproc/include/opencv2/imgproc.hpp:3663] | Locates a known pattern rather than an arbitrary change |
 
 ## 2.3 Rendering annotations onto a frame
@@ -798,14 +798,24 @@ prediction to be read [modules/dnn/include/opencv2/dnn/dnn.hpp:725] — or, coll
 the classification wrapper of §5.2 [modules/dnn/include/opencv2/dnn/dnn.hpp:1656,1697,1700].
 
 The remaining step, obtaining the region's pixels as the matrix those calls consume, is **caller
-preprocessing**: none of the inference entry points cited above crops. Within the in-scope modules
-the patch-extraction facility is `getRectSubPix`
-[modules/imgproc/include/opencv2/imgproc.hpp:2517], which copies a patch of a given size about a
-given centre and interpolates at non-integer coordinates; general region-of-interest addressing on a
-matrix is not provided by the in-scope modules. What is a solved integration problem in this tree is
-therefore the cited preprocess, bind-and-forward and read chain, not the crop that precedes it — and
-it is on that chain that classifying what a captured region *is* (a dialog, a code editor, a video
-player, a particular application window) rests.
+preprocessing**, and the negative here has to be stated at its true width. The cited preprocessing
+entry points do crop, but only as a fixed centre crop about the resized frame's own geometry:
+`blobFromImage` takes a `crop` flag documented to resize the input until one side matches the
+requested spatial size and then crop from the centre
+[modules/dnn/include/opencv2/dnn/dnn.hpp:1298-1302,1308], and the parameterised path exposes the
+same choice as a padding mode, `DNN_PMODE_CROP_CENTER` alongside `DNN_PMODE_LETTERBOX`
+[modules/dnn/include/opencv2/dnn/dnn.hpp:1360-1364], carried on `Image2BlobParams::paddingmode`
+[modules/dnn/include/opencv2/dnn/dnn.hpp:1391] and consumed by `blobFromImageWithParams`
+[modules/dnn/include/opencv2/dnn/dnn.hpp:1418,1421]. What none of them does is select an arbitrary
+changed region and extract it: the crop they offer is positioned by the input frame's own centre,
+not by a region a change gate identified. Within the in-scope modules the patch-extraction facility
+is `getRectSubPix` [modules/imgproc/include/opencv2/imgproc.hpp:2517], which copies a patch of a
+given size about a given centre and interpolates at non-integer coordinates; general
+region-of-interest addressing on a matrix is not provided by the in-scope modules. What is a solved
+integration problem in this tree is therefore the cited preprocess, bind-and-forward and read chain,
+not the selection and extraction of the changed region that precedes it — and it is on that chain
+that classifying what a captured region *is* (a dialog, a code editor, a video player, a particular
+application window) rests.
 
 What that classification requires beyond the tree is a model, and for that model a label set that
 means something to the notetaking use case. Neither exists here: no bundled weights, and no taxonomy
@@ -837,8 +847,9 @@ correlate, so the primary route is not an inference route at all:
 
 If a screen source is ever to become a first-class OpenCV capture source, the plugin ABI is the
 mechanism through which it would be added. This section presents that ABI, the constraints the
-loader imposes on top of it, and the resulting three-part verdict — which turns on distinguishing a
-first-class backend from a host-side adapter, two things easily conflated.
+loader imposes on top of it, what its discovery controls decide for a deployment that installs
+plugins, and the resulting three-part verdict — which turns on distinguishing a first-class backend
+from a host-side adapter, two things easily conflated.
 
 ## 6.1 The VideoIO capture plugin ABI
 
@@ -876,17 +887,37 @@ backends of §1.7, not to VideoIO as a whole.
 
 ## 6.2 What the loader adds to the ABI
 
-Discovery is organised around a registry-known identifier, and the three controls that decide it are
-named exactly here because they are what determines whether an installed application finds a plugin
-at all. Candidates are enumerated by base name
-[modules/videoio/src/backend_plugin.cpp:302] from a search path read from the configuration
-parameter `OPENCV_VIDEOIO_PLUGIN_PATH` [modules/videoio/src/backend_plugin.cpp:310], matched against
-the default file-name pattern `opencv_videoio_<name>*` — the lower-cased base name between the
-platform's library prefix and suffix [modules/videoio/src/backend_plugin.cpp:331] — and that pattern
-is overridable per backend through `OPENCV_VIDEOIO_PLUGIN_<NAME>`, with the base name upper-cased
-[modules/videoio/src/backend_plugin.cpp:332]. Loading is lazy: the factory initialises on
-first use [modules/videoio/src/backend_plugin.cpp:249,278-290] — the same step §1.6 reaches during
-open resolution — and walks its candidates, skipping any library that fails to load
+Discovery is organised around a registry-known identifier, and the controls that decide it are named
+exactly here because they are what determines whether an installed application finds a plugin at
+all — and, as the last part of this section shows, which shared library it loads. Candidates are
+enumerated by base name [modules/videoio/src/backend_plugin.cpp:302] from a search path read from
+the configuration parameter `OPENCV_VIDEOIO_PLUGIN_PATH`
+[modules/videoio/src/backend_plugin.cpp:310]; where that parameter supplies no path, the search
+falls back to the parent directory of the binary's own location
+[modules/videoio/src/backend_plugin.cpp:318-329]. Candidates are matched against the default
+file-name pattern `opencv_videoio_<name>*` — the lower-cased base name between the platform's
+library prefix and suffix [modules/videoio/src/backend_plugin.cpp:331] — and that pattern is
+overridable per backend through `OPENCV_VIDEOIO_PLUGIN_<NAME>`, with the base name upper-cased
+[modules/videoio/src/backend_plugin.cpp:332]. On Windows
+[modules/videoio/src/backend_plugin.cpp:334] one further control applies, to the FFmpeg base name
+only and on a branch whose source comment reads `// backward compatibility`: a directory read from
+`OPENCV_FFMPEG_DLL_DIR` [modules/videoio/src/backend_plugin.cpp:338] is joined with the unpatterned
+module file name and the result added as a candidate
+[modules/videoio/src/backend_plugin.cpp:336-343]. Candidate order is fixed by the code, and it is
+that FFmpeg candidate which goes first [modules/videoio/src/backend_plugin.cpp:341] — ahead of the
+pattern override [modules/videoio/src/backend_plugin.cpp:344-348], ahead of the module name under
+each search path [modules/videoio/src/backend_plugin.cpp:349-352], and ahead of the bare module name
+[modules/videoio/src/backend_plugin.cpp:353]; a debug build defining a debug postfix appends one
+further FFmpeg-only candidate after those, the same module name with that postfix removed
+[modules/videoio/src/backend_plugin.cpp:354-366]. On the other platforms the pattern and the number
+of locations are logged [modules/videoio/src/backend_plugin.cpp:368], each search path is globbed
+with the pattern [modules/videoio/src/backend_plugin.cpp:374], its matches are sorted in descending
+order [modules/videoio/src/backend_plugin.cpp:377], and the total candidate count is logged
+[modules/videoio/src/backend_plugin.cpp:382]. Those controls are the whole of what this candidate
+enumeration reads [modules/videoio/src/backend_plugin.cpp:302-384]. Loading is lazy: the factory
+initialises on first use [modules/videoio/src/backend_plugin.cpp:249,278-290] — the same step §1.6
+reaches during open resolution — and walks its candidates in that order, constructing a dynamic
+library over each path and skipping any that does not load
 [modules/videoio/src/backend_plugin.cpp:386-392].
 
 Initialisation and version negotiation happen next: the entry symbol is resolved
@@ -935,6 +966,49 @@ identifier check happens **after** the plugin has been loaded, initialised and h
 function table, and it is checked against that table. A plugin cannot therefore negotiate its way to
 an identifier the registry does not already associate with it, and that single step is what §6.3's
 first finding rests on.
+
+### Every one of those controls selects a native library this process loads
+
+The controls above are not settings that decide only which backend is offered. Each of them selects
+a file: the search path parameter and its binary-location fallback select the directory, the default
+pattern and its per-backend override select the file name looked for within that directory, and on
+Windows the FFmpeg directory override selects a complete path of its own, first in the candidate
+order. What happens to the selected file is not a read. The loader constructs a dynamic library over
+that path and asks whether it loaded [modules/videoio/src/backend_plugin.cpp:390-391], resolves the
+exported entry symbol inside it [modules/videoio/src/backend_plugin.cpp:46-47] and calls it
+[modules/videoio/src/backend_plugin.cpp:51-56]. Code from the selected file therefore executes
+inside the host process, which makes each of these controls an input deciding which code runs there.
+Two properties of the mechanism follow, and both are the shape of the code, with no intent
+attributed to anyone.
+
+**Neither check in the loader is a pre-load gate.** The identifier comparison rejects a mismatch
+[modules/videoio/src/backend_plugin.cpp:400,410,420] against the function table that the candidate
+library's own initialisation call has already returned, and the compatibility check
+[modules/videoio/src/backend_plugin.cpp:62,146] inspects the header carried inside that same table.
+Both therefore decide which backend an already loaded, already initialised library may serve. Neither
+decides whether that library's code runs, because the table both of them read exists only because it
+ran.
+
+**A candidate that fails to load does not fail the open.** The loop skips it and moves to the next
+[modules/videoio/src/backend_plugin.cpp:386-392], so the backend retained is the first candidate that
+loads and then satisfies those checks — and on Windows the order walked begins with the FFmpeg
+directory override rather than with the configured search path.
+
+The consequences fall on the consumer of this library, because each of these parameters takes its
+value from the configuration the process runs under rather than from anything this repository
+declares — the code supplies a fallback directory and a default pattern, and no more than that. A
+value arriving from the surrounding environment is an unvalidated choice of which code to execute, so
+a deployment sets each of these parameters explicitly, or clears it, rather
+than inheriting whatever the process was started with. A search directory writable by an account
+other than the one owning the deployment allows a correctly named library to be placed into the
+candidate order, so plugins are loaded only from a fixed directory owned by the administrator or
+deployment account and writable by no other account. The provenance and integrity of every plugin
+binary are established before it is installed into that directory, since the loader's own checks run
+after that binary's code has executed. And where a deployment needs no loadable backend, the
+mechanism is better not built at all: the build gates that decide it are in §6.7, and they are the
+one part of this picture the repository itself decides. None of this displaces §6.3's first finding,
+which concerns what a plugin can be rather than which library is loaded — a first-class screen
+capture backend still requires a change to this repository's own sources.
 
 ## 6.3 The extensibility verdict, in three parts
 
@@ -995,6 +1069,30 @@ name between the platform's library prefix and suffix
 `OPENCV_UI_PLUGIN_<NAME>` with the base name upper-cased
 [modules/highgui/src/plugin_wrapper.impl.hpp:205]. What the marker shows is work started or
 considered and left incomplete; **the code records no reason**, and none is inferred here.
+
+The rest of the enumeration mirrors §6.2's. Where the parameter that is read supplies no path, this
+side too falls back to the parent directory of the binary's own location
+[modules/highgui/src/plugin_wrapper.impl.hpp:192-201]; on the platforms that glob, each search path
+is globbed with the pattern [modules/highgui/src/plugin_wrapper.impl.hpp:220,226], its matches are
+sorted in descending order [modules/highgui/src/plugin_wrapper.impl.hpp:229] and the candidate count
+is logged [modules/highgui/src/plugin_wrapper.impl.hpp:234]. Those three controls — the search path
+and its fallback, the default pattern, and the per-backend override — are the whole of what this
+candidate enumeration reads [modules/highgui/src/plugin_wrapper.impl.hpp:174-236].
+
+They are the same kind of thing as §6.2's, and the fact about the mechanism is the same one: each
+selects a file that the factory loads and calls into, walking its candidates and skipping any that
+does not load [modules/highgui/src/plugin_wrapper.impl.hpp:242-250]. Two differences are
+worth recording, and neither narrows the boundary. There is no counterpart here to §6.2's identifier
+check, because the table this ABI declares carries no backend identifier to check — it holds a
+header and one entry point [modules/highgui/src/plugin_api.hpp:36-51] — so the only checks on this
+path are on versions, and they too inspect a header the initialisation call has already returned
+[modules/highgui/src/plugin_wrapper.impl.hpp:34,44]. And the search path this side reads is the
+parameter of another component of the library, so a deployment that sets only an interface-specific
+value has set nothing this path reads. The requirements at the end of §6.2 apply here unchanged: set
+or clear each of these values explicitly rather than inheriting it, load only from a fixed directory
+owned by the administrator or deployment account and writable by no other account, establish each
+binary's provenance and integrity before installing it there, and where no loadable interface backend
+is needed, do not build the mechanism — that gate is in §6.7.
 
 ## 6.5 The internal backend interface is private and non-installed
 
