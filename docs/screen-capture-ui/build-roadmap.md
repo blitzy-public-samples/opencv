@@ -611,10 +611,19 @@ previous retained frame, so it has nothing to compare until frames arrive.
   review run over that whole graph, and a named accountable maintenance owner for every entry whose
   responsibility continues past this exit. An out-of-support component, one carrying an applicable
   advisory with no fixed version available, or an entry with no named owner leaves this exit **unmet
-  and blocks the phase**, and the record states which component and which finding did it. Phase 1's
-  record does not discharge this exit: the components are different ones, and the component this
-  phase adds is the one that sees every keystroke — the last addition in the plan that should reach a
-  deployment ungated.
+  and blocks the phase**, and the record states which component and which finding did it. **The same
+  gate covers whatever performs this deployment's image encoding and decoding, and everything it
+  brings with it.** Encoding a retained frame and reading one back are host work on the terms
+  [functional-spec.md §5](./functional-spec.md) states, so the facility that does either is a
+  component this phase relies on even where it is not one the deployment installs — which is the
+  case the dependency rule of §2 already covers, since it enumerates what a phase relies on as well
+  as what it introduces. Its transitive half is where this one bites: the layers that parse,
+  decompress and allocate sit beneath the interface the application calls, and those are the ones
+  reading a file whose contents somebody else may have chosen, so a graph recorded at the calling
+  interface alone can be clear while the code reading those bytes is unpatched. Phase 1's record
+  does not discharge this exit: the components are different ones, and the two this phase brings
+  inside the gate are the one that sees every keystroke and the one that parses that file — the last
+  additions in the plan that should reach a deployment ungated.
 - The note stream is written under the storage protections and the identifier rules of
   [functional-spec.md §5](./functional-spec.md): the stream and the image directory created
   accessible only to the owning account at the moment of creation, under a configured storage root
@@ -636,6 +645,24 @@ previous retained frame, so it has nothing to compare until frames arrive.
   actor who can write to that artefact, this exit is met only with authentication rooted outside it,
   and where it does not, the exit is met by recording that the pair is a consistency check rather
   than evidence of origin. An exit claiming authenticity from the digest alone is not met.
+- **Reading a retained image back is a bounded read, and this exit is the demonstration of it rather
+  than the statement.** On the terms [functional-spec.md §5](./functional-spec.md) sets, three
+  refusals are exercised against files built to produce them: an image whose encoded length exceeds
+  the deployment's ceiling is refused **before it is hashed**, so hashing is never the step that
+  reads a file of unknown size; an image whose leading bytes are not the encoding the session
+  declared is refused **before any decode begins**, so the record's own field never decides what
+  parses the bytes; and an image whose header declares an extent past the deployment's decoded
+  pixel, memory or time ceiling, or dimensions other than the coordinate space the session recorded,
+  is refused **before a decode allocates anything**. The third case is the one that has to be built
+  rather than argued, because it passes every check the exits above cover: a file small enough to
+  satisfy any encoded ceiling, with a length and a digest that match its record exactly, whose
+  header nonetheless declares an image no deployment would allocate. Each refusal is then shown to
+  leave the artefacts alone — the record unchanged, the file where it was, the stream read to its
+  end afterwards with the refused image reported as unavailable and not as a damaged stream — since
+  a refusal that takes the session's timeline with it has replaced one failure with a worse one. The
+  ceiling values are deployment figures this request does not supply; where none is supplied that
+  part of the exit is **recorded as blocked pending that decision**, and the ordering the three
+  refusals demonstrate stands and is evaluable without them.
 - **Every artefact this phase causes to exist is inventoried, owned and bounded, not just the two it
   writes directly.** The exit is the complete inventory of
   [functional-spec.md §5](./functional-spec.md) instantiated for this deployment: each entry present

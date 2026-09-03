@@ -2230,15 +2230,27 @@ implementer is most likely to collapse:
   being wanted. This is a positive statement of absence and not an error.
 - **`screenshot_ref` is non-null and resolves.** The record additionally carries
   `screenshot_sha256`, the lower-case hexadecimal digest of the stored bytes, and
-  `screenshot_bytes`, their integer length. A consumer that resolves the reference and finds a
-  different digest or length has an image that is *not* the one the record described when the record
-  was written, which a reference alone could not have told it. What that establishes is bounded and
-  the bound is part of the format: the digest is unkeyed and it lives in the same stream as the
-  reference, so it detects a corrupted, truncated, partially written or replaced *image* — a change
-  on one side of a pair — and it does not detect a change made to both. Anything that can rewrite
-  the image can rewrite the line that describes it and recompute the digest from the bytes it just
-  wrote, and the result verifies. So a matching digest is evidence that image and record are
-  consistent, never evidence that either is the one this session produced (R5.24, R5.35).
+  `screenshot_bytes`, their integer length. Resolving is a **bounded read** and not an open
+  followed by whatever the file turns out to be: the name is computed from values already validated
+  rather than followed out of the record (R5.29), the open is relative to an already-open handle on
+  the storage root (R5.34), and the bytes are then read under a finite ceiling and identified as
+  the encoding the session declared before anything decodes them — which is what puts the digest
+  and length comparison below inside a bound instead of making hashing the step that reads without
+  one (R5.49). A consumer that resolves the reference and finds a different digest or length has an
+  image that is *not* the one the record described when the record was written, which a reference
+  alone could not have told it. What that establishes is bounded and the bound is part of the
+  format: the digest is unkeyed and it lives in the same stream as the reference, so it detects a
+  corrupted, truncated, partially written or replaced *image* — a change on one side of a pair —
+  and it does not detect a change made to both. Anything that can rewrite the image can rewrite the
+  line that describes it and recompute the digest from the bytes it just wrote, and the result
+  verifies. So a matching digest is evidence that image and record are consistent, never evidence
+  that either is the one this session produced (R5.24, R5.35). An image the bounded read refuses —
+  one longer than the reader will read, one whose leading bytes are not the declared encoding, one
+  whose decoded dimensions are not the session's `frame_space`, one truncated or inconsistent with
+  its own header — does not add a fourth state to this list: the reference still resolves and the
+  file is still where it was. What it changes is only what the consumer can do with it, and that is
+  the same thing the other two states leave it able to do — read **image not available**, with the
+  record and the stream intact (R5.49).
 - **`screenshot_ref` is non-null and does not resolve.** The image was **deleted**. That is what
   the format defines this state to mean: the record is immutable and append-only, so the reference
   stays where it was written and the image it names is gone. A consumer reads this state and the
@@ -2257,7 +2269,12 @@ after the image is gone, so what was deleted stays described even though it is n
 retrievable.
 
 Encoding an image and writing that file are host work. An image-encoding facility is not provided
-by the in-scope modules, and none outside them is named here.
+by the in-scope modules, and none outside them is named here. Reading one back and decoding it for
+review, export or a reopen is host work on the same terms and for the same reason, so the bounds it
+runs under are stated as obligations on the application rather than as behaviour of anything
+surveyed here: what the reader may read and decode is R5.49's, and what the code doing the decoding
+may do while it runs, together with who accounts for it and for everything it brings with it, is
+R5.50's.
 
 ## 5.7 Extraction state: four values, not a boolean
 
@@ -2350,12 +2367,16 @@ closes a segment (§3.2), the event-to-frame pairing window of §4.4, the retent
 images, whether extraction runs synchronously with admission, the storage root the stream and the
 images are written under, and whether encryption at rest is enabled (§5.11). The protective
 constraints added by §5.11, §5.12 and R5.43 bring their own configurable values and they are
-deployment settings of the same kind: the excluded regions of R4.11, the encoding subset of
-R5.32, each artefact's retention deadline (R5.38), the reader's resource limits (R5.27) and which
-durability mode is in force (R5.43). Each of those has a value a deployment chooses and a rule it
-cannot choose — that exclusions are masked upstream, that the encoding subset is drawn from the
-closed version-`1` set of §5.13.13 and never extends it, that a deadline exists, that every limit is
-finite and enforced, and that no guarantee outruns the declared mode.
+deployment settings of the same kind: the excluded regions of R4.11, the encoding subset of R5.32,
+each artefact's retention deadline (R5.38), the reader's resource limits (R5.27), the ceiling on a
+retained image's encoded byte length together with the ceilings on the pixels, the memory and the
+time its decode may consume (R5.49), and which durability mode is in force (R5.43). Each of those
+has a value a deployment chooses and a rule it cannot choose — that exclusions are masked upstream,
+that the encoding subset is drawn from the closed version-`1` set of §5.13.13 and never extends it,
+that a deadline exists, that every limit is finite and enforced before the thing it bounds is read
+or allocated, that an image's declared encoding is checked against the file's own leading bytes and
+its decoded dimensions against the session's `frame_space`, and that no guarantee outruns the
+declared mode.
 
 Not configurable: the record taxonomy — the four kinds of §5.2 — the common field set and its
 order, the clock and ordering rules, the file-naming scheme, and the whole of the version-`1` schema
@@ -2657,12 +2678,39 @@ presentation-only, orders nothing even when it is present and valid (R2.5).
 **Resource bounds belong to the reader contract, because the reader is the resource.** A stream is
 read one line at a time, holding no more state than the fold of §5.10 needs, and the reader enforces
 a finite maximum for line length, string length, array length, object nesting depth, distinct
-annotation identifiers and total records read. Each of those values is a deployment decision this
-specification does not supply; what it does fix is that every limit exists, is finite, and is
-enforced *before* the thing it bounds is materialised — line length before the line is parsed, depth
-as parsing descends, string length as the string is read. A limit checked after allocation has
+annotation identifiers and total records read — and, where a record resolves to a retained image, a
+finite maximum for that image's encoded byte length and for its decoded extent in pixels, in memory
+and in time (R5.49). Each of those values is a deployment decision this specification does not
+supply; what it does fix is that every limit exists, is finite, and is enforced *before* the thing
+it bounds is materialised — line length before the line is parsed, depth as parsing descends, string
+length as the string is read, the encoded ceiling before the image file is read or hashed, and the
+decoded ceilings before a decode allocates anything. A limit checked after allocation has
 already permitted the allocation, which is the whole of the exhaustion case. A stream that exceeds
 a limit is refused, and refusal is a defined outcome here rather than a crash (R5.27).
+
+**The retained image is the one input this contract reaches that is not the stream, and it needs
+its own bounds for that reason.** Every limit above but the last two bounds a line, and a line is
+text this reader parses itself with the schema of §5.13 in hand; a retained image is a second file,
+in a binary encoding, whose interior the reader does not author and whose own header states how
+much work decoding it will be. The two things a reader knows about an image before it touches it
+are the length the record claims (§5.13.14) and the encoding the session declared (§5.13.13), and
+both are claims rather than measurements — a record can state any length inside the schema's
+ceiling, and a name can carry any extension the encoding member fixes while the bytes underneath
+are something else. So the bounds that do the work are the ones the reader enforces against the
+bytes themselves: a finite ceiling on how many of them it will read at all, so that the digest and
+length comparison of R5.24 happens inside a bound instead of being the step that reads without one;
+the encoding the file's own leading bytes identify, checked against the declared member before
+anything decodes; and finite ceilings on the pixels, the memory and the time a decode may consume,
+taken from the header and checked before the decode allocates. The dimensions are checked as well,
+against the `frame_space` the session-start record carries (§5.13.9), because that is the space
+every `point` and every `geometry` in the stream is expressed in — an image of other dimensions is
+not the frame this record describes, and rendering an annotation over it puts every mark somewhere
+the user did not put it. A retained image that exceeds a ceiling, whose bytes are not the encoding
+declared, whose decoded dimensions are not that space, or which is truncated or inconsistent with
+its own header, is refused; the record and the stream are untouched by that refusal and the
+consumer is left where §5.6's other two states leave it, reading **image not available** (R5.49).
+What the code that parses those bytes may do while it runs, and who accounts for it, is a separate
+obligation because it is a different kind of exposure (R5.50).
 
 **Whole-stream invariants.** Four of them, and each is checkable in one pass with bounded state.
 `event_id` is unique across the stream, and a repeat is a global failure rather than a record
@@ -3055,6 +3103,21 @@ agreement to differ. Had the member set stayed a local matter, two readers could
 extension sets, and a disagreement about the set would have been a disagreement about which
 filenames are valid.
 
+**A member fixes the stored bytes as well as the extension, and that is the half worth more to a
+reader.** The mapping above answers what an image in a session is *called*; the member answers what
+that image must *be*. `png` declares a session whose retained files hold the lossless encoding and
+`jpeg` one whose files hold the lossy encoding, and a reader about to decode checks the declaration
+where it can actually be checked — against the file's own leading bytes, before any decode begins,
+so that a file whose bytes are not the declared encoding is refused rather than handed to a decoder
+chosen from the record (R5.49). Reading a member as a statement about the extension alone would
+leave the strongest fact a session records about its images doing no work at the one moment it is
+worth something: an extension is what every other program uses to *guess* a file's type, while the
+leading bytes are what a decoder acts on, and a member that fixes both makes their agreement a check
+instead of a coincidence. What the member does not become by being checkable is a provider: an
+image-encoding facility is not provided by the in-scope modules and none outside them is named here
+(R5.10), so the member names an encoding this specification declares and the identification of it is
+an obligation on the application's reader (R5.49, R5.50).
+
 ### 5.13.14 The two bounds every numeric field carries
 
 Every numeric field in this schema carries **two** bounds, and one bound is not half a rule: a field
@@ -3102,7 +3165,7 @@ agree about values above the general ceiling.
 | `action` `t_start`, `t_end` | Not negative, each being a value of the session clock, which counts from its own zero point (§2.2) — and `t_end` not less than `t_start`, since an action does not end before it begins (§5.13.7). | The same signed 64-bit range, for the same reason as `t_mono`. |
 | `change_score`; `gate` `threshold` | The closed unit interval of §3.2 — a fraction of pixels, and a threshold compared against one. | `1`, from that interval. |
 | `unit_point` `x`, `y` | The closed unit interval of §2.1. | `1`, from that interval. |
-| `screenshot_bytes` | Greater than zero: the field is present exactly where an image was retained and written, and an encoded image is at least one byte, so a zero would describe a record claiming an image and no image. A truncated or replaced file is detected by comparison against this value rather than by admitting zero into it (R5.24). | `9007199254740991`. |
+| `screenshot_bytes` | Greater than zero: the field is present exactly where an image was retained and written, and an encoded image is at least one byte, so a zero would describe a record claiming an image and no image. A truncated or replaced file is detected by comparison against this value rather than by admitting zero into it (R5.24). | `9007199254740991`, and this ceiling is a representability bound and not a read bound: it fixes the largest length this field can *state*, which is far more than any reader would read. What bounds the reading is the finite ceiling R5.49 puts on the bytes a reader will take from the file at all, enforced before the file is read or hashed, and a value inside this ceiling but above that one is a refused image rather than an accepted read. |
 | `capture.requested` `width`, `height`; `capture.observed` `width`, `height`; `preprocessing.downscale` `width`, `height`; `frame_space` `width`, `height` | Greater than zero: a pixel dimension of zero describes no image and a negative one describes nothing. A knob no value was requested for is `null`, which is a different fact from a value (§5.13.9). | `9007199254740991`. |
 | `capture.requested` `frame_rate`; `capture.observed` `frame_rate` | Greater than zero: a cadence of no frames in a second is not a cadence, and a negative rate has no meaning. Requesting nothing is `null`, and a cadence not yet measured is `null`. | `9007199254740991`. |
 | `capture.requested` `buffer_size` | Greater than zero: a buffer holding no frames is not a buffer, and requesting no value for the knob is `null`. | `9007199254740991`. |
@@ -3479,14 +3542,17 @@ accept for reasons of its own.
   work between them and neither substitutes for the other, and the division is worth stating
   precisely because one part of it is easy to assume: **these limits bound length, count and depth
   and never the magnitude of a number**, which §5.13.14 bounds instead, so a line well inside every
-  limit here can still carry a value no reader can hold and is rejected there rather than here. What
-  these limits do carry is the schema's five deliberately open values — recognised text, annotation
-  text, character content under an exception, a normalised identity and a policy name — which is why
-  §5.13.11 states each open value's bound as this requirement's limit rather than leaving it
-  unbounded, while every value the schema can enumerate or bound numerically is bounded by the
-  schema. The nesting-depth limit applies to the schema's own nesting as
-  well: §5.13's deepest defined object fixes what a conforming record needs, and a line nested
-  deeper than the schema defines fails both this requirement and R5.26.
+  limit here can still carry a value no reader can hold and is rejected there rather than here —
+  and they bound neither the encoded bytes nor the decoded pixels of a retained image, which R5.49
+  bounds instead, so a record well inside every limit here can still name a file whose length or
+  whose declared extent exceeds what the reader will read or allocate, and that too is refused
+  there rather than here. What these limits do carry is the schema's five deliberately open
+  values — recognised text, annotation text, character content under an exception, a normalised
+  identity and a policy name — which is why §5.13.11 states each open value's bound as this
+  requirement's limit rather than leaving it unbounded, while every value the schema can enumerate
+  or bound numerically is bounded by the schema. The nesting-depth limit applies to the schema's
+  own nesting as well: §5.13's deepest defined object fixes what a conforming record needs, and a
+  line nested deeper than the schema defines fails both this requirement and R5.26.
 
 - **R5.28** A reader shall enforce the stream's global invariants — one session identifier
   throughout, unique `event_id`, `t_mono` non-decreasing in `event_id` order, exactly one
@@ -3861,6 +3927,95 @@ accept for reasons of its own.
   criterion needing one is blocked pending that decision, exactly as R5.27's limit values are. A
   bound that came from a performance target rather than from meaning or representability would be a
   figure asserted where this specification cites none (§1.4).
+
+- **R5.49** A reader shall read a retained image under a finite maximum encoded byte length,
+  enforced before the file is read or hashed and applied as the read proceeds; shall require the
+  file's own leading bytes to identify the encoding the session's `image_encoding` declares before
+  any decode begins; shall enforce finite maxima on the decoded pixel count, the decoded memory and
+  the decode time, taken from the image's own header and applied before a decode allocates
+  anything; shall require the decoded dimensions to equal the session's `frame_space`; and shall
+  refuse an image that exceeds a maximum, whose bytes are not the encoding declared, whose
+  dimensions differ, or which is truncated, malformed or inconsistent with its own header, leaving
+  the record and the stream intact.
+
+  Verdict: Host work
+
+  Owner: the application's reader, and every consumer that decodes a retained image — a renderer,
+  an exporter, the reopen path of R5.19 — with the maximum values a deployment decision this
+  specification does not supply, exactly as R5.27's limits are: what is fixed here is that each
+  maximum exists, is finite and is enforced, and an acceptance criterion that needs a particular
+  figure is blocked pending that decision. An image-decoding facility is not provided by the
+  in-scope modules and none outside them is named here (R5.10), so every clause is an obligation on
+  the application and none of it describes the behaviour of anything this dossier surveys. The
+  order of the clauses is the substance of the requirement, because each one is worth only what it
+  is checked before. The encoded maximum comes first: the two things a reader has before it touches
+  the file are the length the record claims and the encoding the session declared, and both are
+  claims a writer made rather than measurements this reader took, so the read is bounded as it
+  proceeds and ends at the maximum instead of ending when the file does. That is also what puts the
+  comparison of R5.24 inside a bound — a reader that hashes a file to find out how long it is has
+  made the file's length the bound on its own work, and the ceiling on `screenshot_bytes`
+  (§5.13.14) is a statement about what a number can represent and not about how much anybody should
+  read. The encoding check comes next because a member of the closed set of §5.13.13 fixes what the
+  stored bytes must be and not only the extension the name carries: an extension is what other
+  programs guess a type from, the leading bytes are what a decoder acts on, and identifying the
+  bytes before deciding how to decode them is what stops a record choosing which decoder runs. The
+  decoded maxima are read out of the header and applied before the decode for exactly the reason
+  R5.27 gives for its own ordering — a maximum checked after allocation has already permitted the
+  allocation, which is the whole of the exhaustion case — so a header declaring an extent no
+  deployment would allocate is refused on the strength of that header, and a file whose encoded
+  length is trivially small is no evidence about the work its header demands. The dimension check
+  is against `frame_space` and against nothing else: that is the space both streams share, after
+  the reduction to the authorised region and any downscale, and every `point` and every `geometry`
+  in the stream is expressed in it (§5.13.9), so an image of other dimensions is not the frame this
+  record describes and every mark drawn over it lands somewhere the user did not put it.
+  `capture.observed` is the wrong comparison for the same reason the schema keeps it separate — it
+  records what the source delivered rather than the coordinate space the stream uses — so an image
+  agreeing with it would still be the wrong canvas for the positions the records carry. And refusal
+  is a defined outcome throughout rather than a fault: an image that exceeds a maximum, contradicts
+  its declared encoding, differs in dimensions, ends early or disagrees with its own header is
+  declined, the record and the stream are left exactly as they were, and the consumer is in the
+  state §5.6's other two lifecycle states already put it in — image not available — which is what
+  keeps a crafted or damaged image from being read as damage to the stream (R5.30).
+
+- **R5.50** The code that decodes a retained image shall run at least privilege and isolated from
+  the authority the reader otherwise holds, and that decoder together with every component it
+  brings with it shall appear in the deployment's resolved bill of materials at the versions
+  resolved, under a published-advisory review across that whole graph and with a named accountable
+  owner for every entry.
+
+  Verdict: Host work
+
+  Owner: whoever integrates the decoder, for the privilege and the isolation, and the deployment,
+  for the record and the ownership. This is a different obligation from R5.49 and the two are kept
+  apart deliberately: R5.49 bounds what reaches the decoder, while this bounds what the decoder can
+  do and who answers for it when a bound turns out to be wrong. The decoder earns its own
+  requirement because of its position rather than its size — it is the one component in the reader
+  that parses binary content somebody else may have chosen, since the bytes it consumes came off a
+  display the session did not author and the file can be rewritten by anything that can write where
+  it lives (R5.35). Least privilege means the decode is performed with the smallest authority that
+  lets it produce pixels: no ability to append to the note stream, no reach into the storage root
+  beyond the descriptor it was handed (R5.34), no ability to send anything anywhere. Isolation
+  means a failure inside it stops there — a decoder that fails while holding the session's own
+  authority is a defect in one parser that has become a defect in the whole reader, which is what
+  the separation exists to prevent — and it is a property of how the deployment runs the decode
+  rather than of the format, so this specification states the obligation and names no mechanism it
+  cannot cite. The record is the other half and it is a graph rather than a name: a decoder is a
+  thin interface over the parsing, decompression and memory-management code beneath it, and that
+  lower layer is usually where the exposure actually sits, so an entry recorded only at the level
+  the application calls can be entirely clear while the code reading these bytes is unpatched. Each
+  entry in that graph carries its resolved version, its support state, the result of an advisory
+  review at that version and a person or a specifically named team accountable for advisory
+  response, patching and end-of-life migration, because a review performed once is a statement
+  about the day it was performed and an advisory published afterwards has no addressee unless one
+  was named. A decoder that is out of support, or that carries an applicable advisory with no
+  available fixed version, or an entry in its graph with nobody accountable for it, is a blocked
+  state on the terms R5.42 already sets rather than a risk this specification absorbs; and where
+  the decode is performed by anything outside the application's own process and control, it is also
+  a processor of session content and is recorded as one before it is used (R5.41). The maximum time
+  a deployment allows between an applicable advisory and a patched deployment is a deployment
+  decision this specification does not supply, so where none is supplied that part of the record is
+  blocked pending that decision while the graph, the owner and the blocking outcomes stand and are
+  evaluable without it.
 
 # 6. UI Component Requirements
 
