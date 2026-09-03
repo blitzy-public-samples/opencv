@@ -1114,9 +1114,9 @@ selected through the module's internal backend interface. The second layer is th
 compile-time one: a build selects at most one legacy built-in through a single if/elseif chain and
 defines its guard [modules/highgui/CMakeLists.txt:55-57,80-82,145-147], and the public probe names
 it — `QT`, `COCOA` or `WAYLAND` according to what the build defines
-[modules/highgui/src/window.cpp:1112-1117], which is the same set the installed header enumerates
-for that probe [modules/highgui/include/opencv2/highgui.hpp:256-261]. The implementation a target
-previews through is therefore the one the probe reports, from either layer.
+[modules/highgui/src/window.cpp:1112-1117], which are drawn from the set the installed header
+enumerates for that probe [modules/highgui/include/opencv2/highgui.hpp:256-261]. The implementation
+a target previews through is therefore the one the probe reports, from either layer.
 
 Capability is not uniform across those implementations: the framebuffer backend logs "not supported"
 and does nothing for mouse callbacks [modules/highgui/src/window_framebuffer.cpp:322-324], trackbars

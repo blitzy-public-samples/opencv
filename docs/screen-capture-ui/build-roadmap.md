@@ -1179,8 +1179,8 @@ distinction is drawn. Backend-compatible registry membership is the built-in lis
 through the registry path and nothing more. Compile-time built-in identity is the other level, and
 the public probe reports it: the probe consults the backend-compatible backend first and falls
 through to a compile-time branch when there is none
-[modules/highgui/src/window.cpp:1096-1121], its own documentation naming the frameworks it can
-return that way [modules/highgui/include/opencv2/highgui.hpp:258-261]. A target whose display
+[modules/highgui/src/window.cpp:1096-1121], its own documentation naming the set of frameworks the
+probe can return [modules/highgui/include/opencv2/highgui.hpp:258-261]. A target whose display
 backend is outside the membership list can therefore still be the framework the probe names at
 runtime. Collapsing the two levels produces a wrong verdict in either direction — a target reported
 as having no display surface when the probe names one, or a probe result read as a guarantee that
@@ -1354,8 +1354,8 @@ Recognition is conditional on what the caller supplies. A recogniser needs a cha
 verdict stated without that condition is a verdict about a build nobody has.
 
 Confidence is not uniform across the two halves of the surface. Detection yields geometry with a
-detector confidence [modules/dnn/include/opencv2/dnn/dnn.hpp:1910], while recognition returns strings
-and no per-string confidence, as
+detector confidence [modules/dnn/include/opencv2/dnn/dnn.hpp:1936-1941], while recognition returns
+strings and no per-string confidence, as
 [functional-spec.md §4](./functional-spec.md) records. So a per-string confidence is the
 application's to produce — through a custom decoder or an external engine — and this phase either
 builds it or records its absence in the extraction payload. Implying that the surface supplies it

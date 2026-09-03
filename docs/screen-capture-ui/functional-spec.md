@@ -2500,27 +2500,21 @@ second door onto the same bytes with permissions of its own. And where any artef
 the same directory and moved into place atomically, so no reader ever sees a half-written
 replacement and no window exists in which the name exists but its contents do not (R5.34).
 
-**Retention deletes the image and leaves the record.** A retention policy that removes images
-leaves the stream referencing files that are gone, and §5.6 fixes what that state means: the image
-was deleted. The deletion is therefore recorded by the format itself, in the record that already
-names the image, and the policy neither rewrites that record nor removes it (R5.23) — rewriting it
-would destroy the only statement the format makes about the deletion and would make the frame
-indistinguishable from one that never retained an image. What a deployment keeps for its own
-operational purposes is its own business, and no consumer of this format depends on it.
-
 **Retention deletes explicitly, and covers every entry in the inventory.** A retention policy that
 removes images leaves the stream referencing files that are gone, and §5.6 has already established
 what that state means: the image was deleted. The deletion is therefore stated by the format itself,
 in the record that already names the image, and no second artefact is required to interpret the
-stream (R5.23). Where a deployment keeps an operational log of its own removals it is an entry of
-the inventory above and carries every obligation the inventory carries, but a consumer reads the
-deletion from the stream either way. The images are not the only artefact with a lifetime, though,
-and every other entry needs the same treatment: each has a **retention deadline** past which it is
-not kept, including the video, the authorisation audit log, any operational removal log, the caches,
-the temporary files and the exports. How long each is a product decision this specification does not
-supply, so it names no period and any acceptance criterion that needs one is blocked pending that
-decision; what it does fix is that no artefact is retained without a deadline, because an artefact
-with no deadline is retained for ever by default (R5.38).
+stream; the policy neither rewrites that record nor removes it (R5.23) — rewriting it would destroy
+the only statement the format makes about the deletion and would make the frame indistinguishable
+from one that never retained an image. Where a deployment keeps an operational log of its own
+removals it is an entry of the inventory above and carries every obligation the inventory carries,
+but a consumer reads the deletion from the stream either way. The images are not the only artefact
+with a lifetime, though, and every other entry needs the same treatment: each has a **retention
+deadline** past which it is not kept, including the video, the authorisation audit log, any
+operational removal log, the caches, the temporary files and the exports. How long each is a product
+decision this specification does not supply, so it names no period and any acceptance criterion that
+needs one is blocked pending that decision; what it does fix is that no artefact is retained without
+a deadline, because an artefact with no deadline is retained for ever by default (R5.38).
 
 **Erasure is described exactly, because this artefact cannot always deliver it.** Three limits, each
 stated where the natural reading is the opposite of the truth.
