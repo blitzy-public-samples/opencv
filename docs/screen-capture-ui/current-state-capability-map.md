@@ -603,7 +603,7 @@ names it concretely rather than leaving it as a gesture.
 Recognition is `TextRecognitionModel`
 [modules/dnn/include/opencv2/dnn/dnn.hpp:1827], whose decode type is selected by a setter documented
 for `"CTC-greedy"` and `"CTC-prefix-beam-search"`
-[modules/dnn/include/opencv2/dnn/dnn.hpp:1857], with beam-search options
+[modules/dnn/include/opencv2/dnn/dnn.hpp:1852-1857], with beam-search options
 [modules/dnn/include/opencv2/dnn/dnn.hpp:1873], the character vocabulary
 [modules/dnn/include/opencv2/dnn/dnn.hpp:1880], and inference either over a whole frame
 [modules/dnn/include/opencv2/dnn/dnn.hpp:1895] or over a list of regions
@@ -692,7 +692,7 @@ the two declared subclasses, that is an EAST-family or DB-family model
 recognition wrapper documents [modules/dnn/include/opencv2/dnn/dnn.hpp:1825]; and a character
 vocabulary supplied through [modules/dnn/include/opencv2/dnn/dnn.hpp:1880] with a decode type of
 `"CTC-greedy"` or `"CTC-prefix-beam-search"`
-[modules/dnn/include/opencv2/dnn/dnn.hpp:1857]. Three consequences follow and belong in a build plan
+[modules/dnn/include/opencv2/dnn/dnn.hpp:1852-1857]. Three consequences follow and belong in a build plan
 rather than in this analysis: each artefact needs a provenance and licence record, since model
 licences vary independently of the library's; packaging must place the files where the application
 finds them at run time; and recognition accuracy is a property of the chosen weights, so it can only

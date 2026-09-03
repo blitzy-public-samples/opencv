@@ -217,64 +217,57 @@ it remains undiscoverable through the library's own vocabulary, which is the sub
   its dependencies — a Direct3D device for either modern route (learn.microsoft.com) — and the
   ingestion route that carries its output, which §1.4 supplies for all three mechanisms, in each
   case as an external element or demuxer the application selects rather than as anything the library
-  offers.
-- **D1.2** The DXGI symbols present in this tree are hardware-decode plumbing, not output
-  duplication, so a reader who treats them as evidence of a Windows capture path would close this
-  gap on a misreading. The baseline capability is decode acceleration
+  offers. The same absence covers what surrounds the frames. Permission and recording visibility are
+  properties of the concrete route a build selects rather than of the API family it fronts (§1.3),
+  and the route this tree can actually reach carries neither an operating-system picker nor a
+  requested recording indicator (§1.4) — while the library has no vocabulary for either: opening is
+  a call against an untyped source encoding
+  [modules/videoio/include/opencv2/videoio.hpp:864,877,888,901,914] that either succeeds or fails,
+  with no consent, grant, revocation or recording-state concept, and the display surface presents an
+  image into a window [modules/highgui/include/opencv2/highgui.hpp:345] beneath a public probe that
+  reports only which framework is active [modules/highgui/include/opencv2/highgui.hpp:261] and no
+  capture indicator of any kind, that display side of the baseline being assessed in
+  [current-state-capability-map.md §3](./current-state-capability-map.md). Measured against the
+  interface set of [functional-spec.md §6](./functional-spec.md), which is where a recording state
+  the user can observe has to live, the delta therefore has three further parts and all three are in
+  application hands. The application supplies its own authorisation step, because the modern
+  mechanism's picker belongs to its picker initiation path while the reachable bridge uses the
+  programmatic one, addressing its target by monitor handle, monitor index or window handle with no
+  picker in the chain (learn.microsoft.com; gstreamer.freedesktop.org). It supplies its own
+  observable recording state, because the element requests no border by default and a suppression
+  request is not a suppression result in any case — a declared capability and a granted consent are
+  required before the system disables the border, a denial leaves the request accepted and ignored,
+  and another application's requirement for the same window or display is honoured regardless
+  (learn.microsoft.com). And it validates the selected route's actual picker and border behaviour on
+  the target, because a build that switches the element's capture mode, or moves between the picker
+  and programmatic paths, changes what the user is shown without changing anything in the library.
+- **D1.2** The two Windows symbols in this tree that a keyword search would misread establish no
+  capture path: the DXGI references are hardware-decode plumbing rather than output duplication, and
+  `BitBlt` appears only in the output direction rather than as a read of the desktop, so a reader
+  who treats either as evidence of a Windows capture path would close this gap on a misreading. The
+  baseline capability is decode acceleration
   [modules/videoio/src/cap_msmf.cpp:54-70,808,1002-1013] and adapter naming
-  [modules/videoio/src/cap_ffmpeg_hw.hpp:232-243], as inventoried in
-  [technical-inventory.md §1](./technical-inventory.md) and assessed in
-  [current-state-capability-map.md §1](./current-state-capability-map.md); the requirement is the
-  frame source of [functional-spec.md §1](./functional-spec.md). The delta is the whole of Desktop
-  Duplication (learn.microsoft.com): its symbols appear nowhere under `modules/`, so nothing in this
-  tree acquires a duplicated output, and the mechanism has to be reached from outside — which §1.4
-  establishes it can be, through the GStreamer element that fronts it. The bridge closes the frame
-  gap and not the metadata one: a manual pipeline delivers BGRA video buffers
-  (gstreamer.freedesktop.org), so the mechanism's dirty-rectangle metadata — the one platform
-  feature that would carry change information without a differencing pass — is carried into the
-  library by no route assessed here, and the change gate of
-  [functional-spec.md §3](./functional-spec.md) is not discharged by it.
-- **D1.3** `BitBlt` appears in this tree only in the output direction, so its presence establishes
-  nothing about reading the desktop. The baseline is the display backend's use of it for clipboard
-  copy and for painting OpenCV's own image
-  [modules/highgui/src/window_w32.cpp:1787,1920], within the display surface assessed in
-  [current-state-capability-map.md §3](./current-state-capability-map.md) and inventoried in
-  [technical-inventory.md §3](./technical-inventory.md); the requirement is the frame source of
-  [functional-spec.md §1](./functional-spec.md). The delta is the GDI capture direction —
-  `BitBlt` from a screen or window device context into a caller-owned bitmap
-  (learn.microsoft.com) — which is host code with no counterpart in this repository, and which
+  [modules/videoio/src/cap_ffmpeg_hw.hpp:232-243] on the capture side, and, on the display side, the
+  Win32 backend's use of `BitBlt` for clipboard copy and for painting OpenCV's own image
+  [modules/highgui/src/window_w32.cpp:1787,1920] — as inventoried in
+  [technical-inventory.md §1](./technical-inventory.md) and
+  [technical-inventory.md §3](./technical-inventory.md) and assessed in
+  [current-state-capability-map.md §1](./current-state-capability-map.md) and
+  [current-state-capability-map.md §3](./current-state-capability-map.md); the requirement is the
+  frame source of [functional-spec.md §1](./functional-spec.md). The delta on the first symbol is
+  the whole of Desktop Duplication (learn.microsoft.com): its symbols appear nowhere under
+  `modules/`, so nothing in this tree acquires a duplicated output, and the mechanism has to be
+  reached from outside — which §1.4 establishes it can be, through the GStreamer element that fronts
+  it. That bridge closes the frame gap and not the metadata one: a manual pipeline delivers BGRA
+  video buffers (gstreamer.freedesktop.org), so the mechanism's dirty-rectangle metadata — the one
+  platform feature that would carry change information without a differencing pass — is carried into
+  the library by no route assessed here, and the change gate of
+  [functional-spec.md §3](./functional-spec.md) is not discharged by it. The delta on the second is
+  the GDI capture direction — `BitBlt` from a screen or window device context into a caller-owned
+  bitmap (learn.microsoft.com) — which is host code with no counterpart in this repository, and which
   reaches the library through either of the two GDI bridges in §1.4, the `gdigrab` demuxer on the
   environment-mediated route or the `winscreencap` plugin's source element on the manual-pipeline
   route (ffmpeg.org; gstreamer.freedesktop.org).
-- **D1.4** Permission and recording visibility on Windows are properties of the concrete route a
-  build selects rather than of the API family it fronts, and the route this tree can actually reach
-  carries neither an operating-system picker nor a requested recording indicator — so on that route
-  nothing authorises a capture, and nothing is guaranteed to make one observable, unless the
-  application does it itself. What the platform may still draw of its own accord is stated in the
-  last part of this delta rather than relied on as a control. The baseline is a capture contract
-  with no vocabulary for either: opening is a call against an untyped source encoding [modules/videoio/include/opencv2/videoio.hpp:864,877,888,901,914] that either
-  succeeds or fails, with no consent, grant, revocation or recording-state concept, and the display
-  surface exposes no capture indicator of any kind — it presents an image into a window
-  [modules/highgui/include/opencv2/highgui.hpp:345] beneath a public probe that reports only which
-  framework is active [modules/highgui/include/opencv2/highgui.hpp:261] — as assessed in
-  [current-state-capability-map.md §1](./current-state-capability-map.md) for the capture side and
-  [current-state-capability-map.md §3](./current-state-capability-map.md) for the display side, and
-  inventoried in [technical-inventory.md §1](./technical-inventory.md). The requirements are the
-  explicit source selection and explicit-failure start of
-  [functional-spec.md §1](./functional-spec.md) and the interface set of
-  [functional-spec.md §6](./functional-spec.md), which is where a recording state the user can
-  observe has to live. The delta has three parts. The application supplies its own authorisation
-  step, because the modern mechanism's picker belongs to its picker initiation path while the
-  concrete bridge uses the programmatic one, addressing its target by monitor handle, monitor index
-  or window handle with no picker in the chain (learn.microsoft.com; gstreamer.freedesktop.org). It
-  supplies its own observable recording state, because the element requests no border by default and
-  a suppression request is not a suppression result in any case — a declared capability and a
-  granted consent are required before the system disables the border, a denial leaves the request
-  accepted and ignored, and another application's requirement for the same window or display is
-  honoured regardless (learn.microsoft.com). And it validates the selected route's actual picker and
-  border behaviour on the target, because a build that switches the element's capture mode, or moves
-  between the picker and programmatic paths, changes what the user is shown without changing
-  anything in the library.
 
 # 2. Linux X11 Capture Path
 
@@ -392,18 +385,18 @@ in [functional-spec.md §3](./functional-spec.md).
   the X11 source element documents (gstreamer.freedesktop.org). No operating-system consent step
   has to be designed for on this platform, which is exactly what makes X11 the misleading platform
   to design a portable abstraction against; the application-level authorisation and recording state
-  of §7.2 apply here as on every other route.
-- **D2.2** The framebuffer backend's read of a display surface is restoration, not acquisition, so
-  it closes none of the capture requirement despite being the one place in the authorised modules
-  where screen pixels are read. The baseline is that read and its purpose
-  [modules/highgui/src/window_framebuffer.cpp:626-634,637-651], gated off by default
-  [CMakeLists.txt:231], as assessed in
+  of §7.2 apply here as on every other route. One internal exception has to be named and bounded
+  here, because it is the one place in the authorised modules where screen pixels are read and it
+  closes none of this requirement: the framebuffer backend's read of a display surface is
+  restoration, not acquisition, since the copy exists so that the destructor can put back whatever
+  the window was drawn over [modules/highgui/src/window_framebuffer.cpp:626-634,637-651], and it is
+  gated off by default [CMakeLists.txt:231] — as assessed on the display side in
   [current-state-capability-map.md §3](./current-state-capability-map.md) and inventoried in
-  [technical-inventory.md §3](./technical-inventory.md); the requirement is the continuous frame
-  stream of [functional-spec.md §1](./functional-spec.md). The delta is everything that separates a
-  one-shot mapped-surface copy from a frame source: repetition under a clock, exposure through a
-  capture interface, and a target that is a real display rather than a framebuffer device or an Xvfb
-  file. The one transferable detail is the pixel layout — the copy targets a `CV_8UC4` buffer
+  [technical-inventory.md §3](./technical-inventory.md), against the continuous frame stream the
+  same requirement asks for. What separates that one-shot mapped-surface copy from a frame source is
+  itself part of the delta: repetition under a clock, exposure through a capture interface, and a
+  target that is a real display rather than a framebuffer device or an Xvfb file. The one
+  transferable detail is the pixel layout — the copy targets a `CV_8UC4` buffer
   [modules/highgui/src/window_framebuffer.cpp:626], so a BGRA screen-shaped acquisition converts
   into the library's frame type without a conversion step.
 
@@ -644,7 +637,26 @@ sequenceDiagram
   selects the Wayland built-in [modules/highgui/CMakeLists.txt:55-57] and the public probe
   [modules/highgui/include/opencv2/highgui.hpp:261] still reports `WAYLAND` from its compile-time
   branch [modules/highgui/src/window.cpp:1116-1117] — so an application can determine that this is
-  the active framework at runtime, which is what the parity question in §7 turns on.
+  the active framework at runtime, which is what the parity question in §7 turns on. The acquisition
+  side of that delta is additionally the one end-to-end path in this assessment that can be stated
+  and not confirmed, which is a property of this delta rather than a separate one. What the two
+  routes require of any producer is fixed and cited — a terminating appsink named `appsink0` or
+  `opencvsink` for the pipeline route
+  [modules/videoio/src/cap_gstreamer.cpp:1343,1502,1534], or a demuxer resolvable by
+  `av_find_input_format` [modules/videoio/src/cap_ffmpeg_impl.hpp:1206-1210] with device-oriented
+  opening behind the `HAVE_FFMPEG_LIBAVDEVICE` guard
+  [modules/videoio/src/cap_ffmpeg_impl.hpp:1213,1218] for the environment-mediated route, those
+  routes being owned by [current-state-capability-map.md §1](./current-state-capability-map.md) and
+  their build gates inventoried in [technical-inventory.md §5](./technical-inventory.md) — and the
+  conditional route selection of [functional-spec.md §1](./functional-spec.md) already makes route
+  choice contingent on verified availability. What is unsettled is what §3.4 enumerates around a
+  candidate chain whose links are individually sourced: descriptor ownership and lifetime across the
+  hand-off into the library's pipeline, caps negotiation to a format the appsink path accepts, and
+  behaviour when the session is revoked or a persistence grant's token replaced — plus an owner for
+  the session's lifetime and an added plugin dependency for the PipeWire source element
+  (flatpak.github.io/xdg-desktop-portal; gstreamer.freedesktop.org). Until a build settles those the
+  route is a candidate, which is what forbids naming this platform's route the cross-platform
+  primary.
 - **D3.2** Neither mediated consent nor a session of any kind has a counterpart in the capture API,
   so the structural features of Wayland acquisition are unrepresentable in the library's own
   contract. What is distinctive here is the session and its transport rather than interactivity as
@@ -661,49 +673,27 @@ sequenceDiagram
   restore token that is single-use and replaced on each successful restore
   (flatpak.github.io/xdg-desktop-portal) — together with the two-part conclusion of §3.3: mediated
   consent as a matter of contract, and unattended operation as a per-environment deployment question
-  rather than a portable guarantee.
-- **D3.3** The bridge from a granted portal stream into an ingestion route is a named candidate
-  rather than a verified route, so Wayland is the one platform whose end-to-end path this assessment
-  can state and cannot confirm. The baseline is what the routes require of any producer: a
-  terminating appsink named `appsink0` or `opencvsink` for the pipeline route
-  [modules/videoio/src/cap_gstreamer.cpp:1343,1502,1534], or a demuxer resolvable by
-  `av_find_input_format` [modules/videoio/src/cap_ffmpeg_impl.hpp:1206-1210] with device-oriented
-  opening behind the `HAVE_FFMPEG_LIBAVDEVICE` guard
-  [modules/videoio/src/cap_ffmpeg_impl.hpp:1213,1218] for the environment-mediated route — the
-  routes and their conditions being
-  owned by [current-state-capability-map.md §1](./current-state-capability-map.md) and their
-  build gates inventoried in [technical-inventory.md §5](./technical-inventory.md); the requirement
-  is the conditional route selection of [functional-spec.md §1](./functional-spec.md), which already
-  makes route choice contingent on verified availability. The delta is what §3.4 enumerates as
-  unsettled around a chain whose links are individually sourced — descriptor ownership and lifetime
-  across the hand-off into the library's pipeline, caps negotiation to a format the appsink path
-  accepts, and behaviour when the session is revoked or a persistence grant's token replaced — plus
-  an owner for the session's lifetime and an added plugin dependency for the PipeWire source element
-  (flatpak.github.io/xdg-desktop-portal; gstreamer.freedesktop.org). Until a build settles those,
-  the route is a candidate, which is what forbids naming this platform's route the cross-platform
-  primary.
-- **D3.4** The restore token is sensitive capability state with no owner anywhere in this tree, so
-  the one artefact that can carry a screen-capture grant from one run to the next has no storage,
-  redaction, replacement or erasure contract until the application supplies one. The baseline is a
-  capture contract with nothing to hold it: opening is a call against an untyped source encoding
-  [modules/videoio/include/opencv2/videoio.hpp:864,877,888,901,914] with no session, grant,
-  revocation or credential surface of any kind, and the only persistence facility in the authorised
-  modules writes video frames [modules/videoio/include/opencv2/videoio.hpp:1076,1189-1201] — as
-  assessed in [current-state-capability-map.md §1](./current-state-capability-map.md) and
-  inventoried in [technical-inventory.md §1](./technical-inventory.md). Protected storage for a
+  rather than a portable guarantee. One artefact of that lifecycle carries the delta furthest,
+  because it is the only thing that can carry a screen-capture grant from one run to the next and it
+  has no owner anywhere in this tree: the restore token is sensitive capability state, and it has no
+  storage, redaction, replacement or erasure contract until the application supplies one. The
+  baseline has nothing to hold it — the same open call offers no session, grant, revocation or
+  credential surface of any kind
+  [modules/videoio/include/opencv2/videoio.hpp:864,877,888,901,914], and the only persistence
+  facility in the authorised modules writes video frames
+  [modules/videoio/include/opencv2/videoio.hpp:1076,1189-1201] — while protected storage for a
   credential-bearing value is likewise not provided by the in-scope modules, and no provider for it
-  is named here. The requirement is the note stream of
+  is named here. It also engages a second requirement, the note stream of
   [functional-spec.md §5](./functional-spec.md), which fixes what a session's records contain and is
-  precisely what the token must never enter. The delta is the token's whole between-session
-  lifecycle in application hands, as §3.3 assigns it: protected least-privilege storage; no
-  appearance in the note stream, in any log line or in any diagnostic output; atomic replacement on
-  each successful restore, since the specification invalidates a token after one use and returns its
-  replacement (flatpak.github.io/xdg-desktop-portal); erasure on revocation, at logout or uninstall
-  and on a failed policy check; and an application authorisation gate evaluated independently of the
-  token, so possession never authorises a session by itself. None of this is a property the portal
-  can enforce on a client, which is why it is stated here as a requirement on the application rather
-  than as a feature of the interface.
-
+  precisely what the token must never enter. That part of the delta is the token's whole
+  between-session lifecycle in application hands, as §3.3 assigns it: protected least-privilege
+  storage; no appearance in the note stream, in any log line or in any diagnostic output; atomic
+  replacement on each successful restore, since the specification invalidates a token after one use
+  and returns its replacement (flatpak.github.io/xdg-desktop-portal); erasure on revocation, at
+  logout or uninstall and on a failed policy check; and an application authorisation gate evaluated
+  independently of the token, so possession never authorises a session by itself. None of this is a
+  property the portal can enforce on a client, which is why it is stated here as a requirement on
+  the application rather than as a feature of the interface.
 
 # 4. Screen-Capture-as-a-Source Gap
 
@@ -792,7 +782,18 @@ selectors inventoried in [technical-inventory.md §5](./technical-inventory.md).
   adds is that none of them is discoverable, so an application cannot learn from the library whether
   any of them holds. The delta is therefore discoverability and typing, not capture: an application
   cannot ask the library whether a screen source is available, and must carry that knowledge
-  itself.
+  itself. One prerequisite of these two routes does belong here rather than to the owning section,
+  because the two backends that carry the routes are exactly the two the timeout properties apply
+  to, so on a screen route the timeout semantics are the route's own: open and read timeouts exist
+  as property identifiers applicable to those two backends only
+  [modules/videoio/include/opencv2/videoio.hpp:187-188], and each of them independently defines a
+  thirty-second default in its own implementation
+  [modules/videoio/src/cap_ffmpeg_impl.hpp:261-262] and
+  [modules/videoio/src/cap_gstreamer.cpp:83-84]. Measured against the explicit-failure start the
+  same requirement fixes, that adds two parts to this delta: outside those two backends the
+  properties do not apply at all, so a stalled open has no library-level bound; and on those two the
+  default is long enough that an interactive session can stall in a way the user sees unless the
+  application sets both explicitly rather than inheriting them.
 - **D4.3** There is no screen-target addressing contract, so two applications capturing the same
   monitor would name it differently and neither could discover the other's convention. The baseline
   is the three encodings the open surface actually offers — a device index, a pseudo-filename through
@@ -855,19 +856,6 @@ selectors inventoried in [technical-inventory.md §5](./technical-inventory.md).
   itself, and no source-side facility displaces it — the damage-tracking option on the X11 source
   element is a pixel-copy optimisation that still emits a buffer at its configured frame rate and
   exposes no change signal (gstreamer.freedesktop.org).
-- **D4.7** Timeout semantics are partial and default long, so an interactive session can stall in a
-  way the user sees. The baseline is that open and read timeouts exist as property identifiers
-  applicable to two backends only
-  [modules/videoio/include/opencv2/videoio.hpp:187-188], with each of those backends independently
-  defining a thirty-second default in its own implementation
-  [modules/videoio/src/cap_ffmpeg_impl.hpp:261-262] and
-  [modules/videoio/src/cap_gstreamer.cpp:83-84], as assessed in
-  [current-state-capability-map.md §1](./current-state-capability-map.md) and inventoried in
-  [technical-inventory.md §1](./technical-inventory.md); the requirement is the explicit-failure
-  start of [functional-spec.md §1](./functional-spec.md). The delta has two parts: on backends
-  outside those two the properties do not apply at all, so a stalled open has no library-level
-  bound; and on those two the default is long enough that an application must set both explicitly
-  rather than inherit them.
 
 # 5. Input-Event Hook Gap
 
@@ -938,7 +926,22 @@ reached in [current-state-capability-map.md §3](./current-state-capability-map.
   accepts the registration and does nothing with it
   [modules/highgui/src/window_framebuffer.cpp:322-324] — so an application relying on pointer input
   determines the active backend at runtime
-  [modules/highgui/include/opencv2/highgui.hpp:261] and degrades explicitly.
+  [modules/highgui/include/opencv2/highgui.hpp:261] and degrades explicitly. What the library does
+  not say about the delivery it does perform belongs to the same delta, because a correlation design
+  built on window events would otherwise assume it: no portable thread-affinity contract is exposed,
+  so which thread delivers a window event is undetermined. The public header states the requirement
+  as an active window plus periodic event processing and says nothing about thread ownership
+  [modules/highgui/include/opencv2/highgui.hpp:282-287], while the only dedicated event thread is
+  one backend's, started by a function that returns zero without effect elsewhere
+  [modules/highgui/src/window_gtk.cpp:647-664] and
+  [modules/highgui/src/window.cpp:902-908] — a reading also reached in
+  [current-state-capability-map.md §3](./current-state-capability-map.md). Against the cross-thread
+  stamping rule of [functional-spec.md §2](./functional-spec.md), the delta that follows is that the
+  application must make the guarantee the library does not: stamp each record's time values where
+  the record is acquired, whichever thread that is, and serialise the writing itself — the single
+  writer being where each record's sequence number is issued rather than at acquisition. Where a
+  claim about thread behaviour is needed, it holds only for the backend that establishes it and must
+  name that backend.
 - **D5.2** There is no backend-independent per-frame host-clock acquisition instant, so a frame
   cannot be placed on a session timeline from what the library reports about it. The baseline is the
   four adjacent properties of §5.2 and their precise scopes — media-timeline position
@@ -970,21 +973,6 @@ reached in [current-state-capability-map.md §3](./current-state-capability-map.
   than deferring it, and what remains is the host-side implementation on both stream sources,
   including stamping each record's time value at the point of acquisition rather than at the point
   of writing, while the sequence number is assigned by the single writer as it serialises.
-- **D5.4** No portable thread-affinity contract is exposed, so a correlation design cannot assume
-  which thread will deliver a window event. The baseline is what the source establishes: the public
-  header requires an active window and periodic event processing and says nothing about thread
-  ownership [modules/highgui/include/opencv2/highgui.hpp:282-287], while the only dedicated event
-  thread is one backend's, started by a function that returns zero without effect elsewhere
-  [modules/highgui/src/window_gtk.cpp:647-664] and
-  [modules/highgui/src/window.cpp:902-908] — assessed in
-  [current-state-capability-map.md §3](./current-state-capability-map.md) and inventoried in
-  [technical-inventory.md §3](./technical-inventory.md); the requirement is the cross-thread
-  stamping rule of [functional-spec.md §2](./functional-spec.md). The delta is that the application
-  must make the guarantee the library does not: stamp each record's time values where the record is
-  acquired, whichever thread that is, and serialise the writing itself — the single writer being
-  where each record's sequence number is issued rather than at acquisition. Where a claim about thread behaviour is needed,
-  it holds only for the backend that establishes it and must name that backend.
-
 
 # 6. OCR Dependency Gap
 
@@ -1046,24 +1034,21 @@ character-list file exists anywhere in the repository.
   [current-state-capability-map.md §4](./current-state-capability-map.md) and inventoried in
   [technical-inventory.md §4](./technical-inventory.md); the requirement is the text output of
   [functional-spec.md §4](./functional-spec.md). The delta therefore has three parts: the assets,
-  which is the part D6.2 gives an identity to; the integration code above them, which no asset
+  which the rest of this delta gives an identity to; the integration code above them, which no asset
   supplies; and one thing the API itself does not offer, a per-string recognition confidence, since
   recognition returns strings alone [modules/dnn/include/opencv2/dnn/dnn.hpp:1895,1904] while only
   detection reports a confidence [modules/dnn/include/opencv2/dnn/dnn.hpp:1936-1941] — so that
   figure comes from a custom decoder or from an external engine and from nowhere in this surface.
-- **D6.2** The dependency has an identity, and naming it is what this delta owes. Two routes exist,
-  and the choice between them is a product decision with recorded axes rather than an open question.
-  The baseline is the same wrapper surface and its constructor condition
-  [modules/dnn/include/opencv2/dnn/dnn.hpp:1838,1880,1993,2054], assessed in
-  [current-state-capability-map.md §4](./current-state-capability-map.md) and inventoried in
-  [technical-inventory.md §4](./technical-inventory.md); the requirement is
-  [functional-spec.md §4](./functional-spec.md). The in-library route needs three artefacts and no
-  new library: a detector matching one of the two concrete detector classes
+  Naming the dependency is what the first of those parts owes, and it resolves to two routes whose
+  constructor condition is the same wrapper surface again
+  [modules/dnn/include/opencv2/dnn/dnn.hpp:1838,1880,1993,2054]; the choice between them is a
+  product decision with recorded axes rather than an open question. The in-library route needs three
+  artefacts and no new library: a detector matching one of the two concrete detector classes
   [modules/dnn/include/opencv2/dnn/dnn.hpp:1983,2044]; a CRNN-CTC recogniser, which is what the
   recognition class documents as supported
   [modules/dnn/include/opencv2/dnn/dnn.hpp:1818-1825]; and a character vocabulary supplied through
   the vocabulary setter [modules/dnn/include/opencv2/dnn/dnn.hpp:1880] with a decode type of
-  `CTC-greedy` or `CTC-prefix-beam-search` [modules/dnn/include/opencv2/dnn/dnn.hpp:1857]. Each
+  `CTC-greedy` or `CTC-prefix-beam-search` [modules/dnn/include/opencv2/dnn/dnn.hpp:1852-1857]. Each
   artefact needs a provenance and licence record, since model licences vary independently of the
   library's; packaging must place them where the application finds them at runtime; and accuracy is
   a property of the chosen weights, so validation needs a labelled sample of the actual screen
@@ -1075,7 +1060,7 @@ character-list file exists anywhere in the repository.
   breadth of languages a single-line CRNN-CTC model cannot cover, comparing on recognition scope,
   asset licensing, packaging weight and validation cost. No artefact is selected or obtained by this
   assessment.
-- **D6.3** The action taxonomy is undefined, and the gap is not inference capability but what the
+- **D6.2** The action taxonomy is undefined, and the gap is not inference capability but what the
   actions are and where they come from. The baseline is a complete frame-to-prediction path
   [modules/dnn/include/opencv2/dnn/dnn.hpp:1656,1772,1308] under the same caller-supplies-the-asset
   condition, as assessed in
@@ -1155,13 +1140,19 @@ corresponding availability flag false.
   its capture item from a monitor handle, a monitor index or a window handle, with no picker in the
   chain, and requests no border (gstreamer.freedesktop.org, per §1.4). DXGI Desktop Duplication, GDI
   `BitBlt` and the X11 reads have no operating-system consent step at all (learn.microsoft.com;
-  x.org). The accurate parity statement is therefore sharper than a platform-level one: interactive
-  authorisation is guaranteed by contract on one platform, present as an unused initiation path on
-  another, and absent from every remaining mechanism — so an assessment that credits Windows with
-  mediation is describing a route the build has not selected. The converse overclaim is excluded by
-  the same sources: the platform does mediate the picker path, and a border the platform decides to
-  draw — because suppression was not consented to, or because another application requires one for
-  the same window or display — is drawn whatever the element requests (learn.microsoft.com). On
+  x.org). The accurate parity statement is therefore sharper than a platform-level one, and on the
+  one platform that mediates it has two parts. What the interface fixes as a matter of contract is
+  that consent is mediated: an application cannot assume it may start a stream there without user
+  interaction (flatpak.github.io/xdg-desktop-portal). Whether a given first run or a restored
+  session is unattended in practice is a deployment property, determined by the portal backend and
+  the compositor's policy rather than by the interface, and is validated per target environment.
+  Operating-system mediation is present on a second platform as an initiation path the reachable
+  route does not take, and absent from every remaining mechanism — so an assessment that credits
+  Windows with mediation is describing a route the build has not selected. The converse overclaim
+  is excluded by the same sources: the platform does mediate the picker path, and a border the
+  platform decides to draw — because suppression was not consented to, or because another
+  application requires one for the same window or display — is drawn whatever the element requests
+  (learn.microsoft.com). On
   application-level authorisation, the requirement is uniform and falls on every route including the
   unmediated ones and the one whose family has a picker it does not use: the application authorises
   the capture itself and keeps a recording state the user can observe, because on the routes the
@@ -1174,12 +1165,14 @@ corresponding availability flag false.
   single-use and replaced, and frames arrive over a separate media transport addressed by descriptor
   and serial (flatpak.github.io/xdg-desktop-portal) — none of which has a counterpart in an open
   call that either succeeds or fails. A portable abstraction must therefore carry an authorisation
-  stage whose outcome is interactive by contract on one platform and interactive only on routes that
-  use a mediated initiation path elsewhere, a session lifetime that only one platform imposes, and
-  an application-level consent and recording state on all three, since the last of those is the only
-  one no route can take away. Because the Wayland bridge into an ingestion route is a candidate
-  rather than a verified route (§3.4), no route may be named the cross-platform primary on the
-  strength of that platform.
+  stage that one platform mediates as a matter of contract — so the stage is designed for a user
+  interaction that cannot be assumed away there, while whether any particular run actually presents
+  one is the backend- and compositor-dependent deployment question validated per target environment
+  — and that elsewhere is reached only on routes taking a mediated initiation path; a session
+  lifetime that only one platform imposes; and an application-level consent and recording state on
+  all three, since the last of those is the only one no route can take away. Because the Wayland
+  bridge into an ingestion route is a candidate rather than a verified route (§3.4), no route may
+  be named the cross-platform primary on the strength of that platform.
 - **D7.2** Display and interaction parity is backend-conditional rather than platform-conditional,
   so a feature verified on one target can be silently inert on another. The baseline is the
   backend-compatible membership list and its per-platform gates

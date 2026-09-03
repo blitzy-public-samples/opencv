@@ -106,15 +106,15 @@ two selection shapes rather than one:
   beforehand. The session normalises what the platform returned into its source identity (§5.5)
   **after** the grant, which is the only point at which there is anything to normalise.
 
-The platform mechanisms and the order each imposes on selection are established in
-[platform-capture-gap-assessment.md §1](./platform-capture-gap-assessment.md) and
-[platform-capture-gap-assessment.md §3](./platform-capture-gap-assessment.md) and are not
-re-derived here. What both shapes hold in common is the ban: what the session carries forward is a
-platform object's own identity, or the normalisation of the object the platform granted, and never
-anything a user typed or anything read from a window's title. That is a correctness requirement
-before it is a security one, because a title is not unique and does not survive the window changing
-it; but it is also what keeps an attacker-influenced string — a window title is chosen by whoever
-wrote the window's contents — out of the route arguments of §1.3.
+Which of the two shapes a mechanism imposes, and the order it therefore imposes on selection, is a
+property of the mechanism the deployment selects, which this specification does not assume: what it
+requires is that a session support the shape its chosen mechanism presents and record which of the
+two produced the identity it carries. What both shapes hold in common is the ban: what the session
+carries forward is a platform object's own identity, or the normalisation of the object the platform
+granted, and never anything a user typed or anything read from a window's title. That is a
+correctness requirement before it is a security one, because a title is not unique and does not
+survive the window changing it; but it is also what keeps an attacker-influenced string — a window
+title is chosen by whoever wrote the window's contents — out of the route arguments of §1.3.
 
 **Enumerating the platform's objects and authorising the session do not make the collection
 minimal.** An authorisation decides *whether* a session may record; it does not decide *how much*
@@ -125,12 +125,11 @@ open, a document belonging to someone who never agreed to any of it — and ever
 then flows into the change gate of §3, the extraction of §4 and the retained artefact of §5. So the
 authorised scope is the narrowest the purpose allows: one window in preference to a monitor where
 the platform can target a window at all, one monitor in preference to every monitor, and a region
-within the chosen surface where the purpose needs only that region. What each platform can address
-is not uniform, and the width of each is established in
-[platform-capture-gap-assessment.md §1](./platform-capture-gap-assessment.md),
-[platform-capture-gap-assessment.md §2](./platform-capture-gap-assessment.md) and
-[platform-capture-gap-assessment.md §3](./platform-capture-gap-assessment.md) rather than assumed
-here.
+within the chosen surface where the purpose needs only that region. What a platform can address is
+not uniform, and the granularities on offer are a property of the mechanism the deployment selects,
+which this specification does not assume: the requirement binds against whichever granularities the
+chosen mechanism exposes, and it is the narrowest of those, never the widest the mechanism happens
+to make easiest.
 
 The scope is enforced upstream of everything, which is the part an implementation is most likely to
 defer. The reduction of the acquired surface to the authorised region happens as the first operation
@@ -145,10 +144,10 @@ ordering, and their masking is R4.11.
 granted for, so any expansion is a new decision: a second monitor, an additional window, a wider
 region, a smaller region replaced by a larger one, or a target whose identity changed underneath the
 session. Where the platform's own mediation can return a session bound to a surface other than the
-one a user previously chose — the restored-session case recorded in
-[platform-capture-gap-assessment.md §3](./platform-capture-gap-assessment.md) — the session
-compares what it was granted against what it asked for and stops rather than recording a surface
-nobody selected in this session (R1.22).
+one a user previously chose — the case of a persisted session restored on a later run, which arises
+on any grant-based mechanism that offers persistence at all — the session compares what it was
+granted against what it asked for and stops rather than recording a surface nobody selected in this
+session (R1.22).
 
 **Authorisation is revocable, and the session is interruptible, while it runs.** A user who
 authorised a recording must be able to suspend it without ending it and to withdraw the
@@ -639,11 +638,10 @@ stage stamped and unnumbered (§2.4, R2.4).
   never the identity carried forward. The narrowness clause is the minimisation half of the same
   choice and is not satisfied by identification alone: enumerating three monitors and taking all
   three identifies platform objects and is also the widest possible collection. Which mechanism falls
-  in which shape, and which granularities a platform actually offers, differ per target and are
-  established in [platform-capture-gap-assessment.md §1](./platform-capture-gap-assessment.md),
-  [platform-capture-gap-assessment.md §2](./platform-capture-gap-assessment.md) and
-  [platform-capture-gap-assessment.md §3](./platform-capture-gap-assessment.md); the region-level
-  reduction that follows the platform's own granularity is R1.21.
+  in which shape, and which granularities a platform actually offers, differ per target and are a
+  property of the mechanism the deployment selects, which this specification does not assume; the
+  requirement therefore binds against whichever granularities the chosen mechanism exposes, and the
+  region-level reduction that follows the platform's own granularity is R1.21.
 
 - **R1.19** No untrusted value shall be interpolated into a route argument, and a value carrying
   the route's own delimiters, its metacharacters or any control character shall be rejected rather
@@ -702,8 +700,8 @@ stage stamped and unnumbered (§2.4, R2.4).
   every subsequent grant. Expansion covers a second monitor, an additional window, a wider region
   and a target whose identity changed underneath the session. The comparison matters most where the
   platform's mediation can return a session bound to a surface the user did not choose in this
-  session — the restored-session case established in
-  [platform-capture-gap-assessment.md §3](./platform-capture-gap-assessment.md) — and the library
+  session — the restored-session case of §1.2, in which a grant-based mechanism offering persistence
+  resolves a stored request rather than putting the choice to the user again — and the library
   cannot help: the open call reports whether a capture opened
   [modules/videoio/include/opencv2/videoio.hpp:921] and knows nothing about which surface a
   platform decided to hand over. Stopping is the specified outcome for a mismatch, on the same
@@ -1132,8 +1130,19 @@ the diagram carries the rule that matters, and it carries it as an allocation ra
 comparison: the sequence number is issued there and nowhere else (§2.4), and within one `t_mono`
 group the writer numbers an `input` record before a `frame` record, so the consumer's sort on the
 pair places cause before effect without the comparator ever consulting a record's kind (§2.3).
-Records of every kind the format defines enter this merge by exactly the path the diagram shows, an
-annotation revision record (§5.10) among them.
+What the diagram shows is those two streams and no others, and they are the two the equal-time rule
+is about: an `input` record created by the operating-system hook, and a `frame` record created by
+frame delivery.
+
+The taxonomy's other two kinds are written elsewhere and so appear on neither depicted path: a
+`session` record by the session's own lifecycle (§1.1) and a `segment` record by the change gate
+that closes a segment (§3.5). They reach the timeline on the same terms every producer is held to in
+§2.4 rather than on terms of their own — `t_mono` stamped where the record originates, `event_id`
+issued by the single writer as it serialises the record, and the two-key comparison of §2.3 ordering
+it against a record of any kind — which is why the merge needs no third and fourth branch drawn to
+accommodate them. An annotation revision is not on that list and is not claimed to follow either
+depicted path: which record carries one is the open specification decision §5.10 records, and while
+it stands open no revision record is written at all (§5.2).
 
 
 ## 2.7 Requirements
@@ -1662,7 +1671,7 @@ Each wrapper is constructible either from a caller-supplied network or from mode
 paths [modules/dnn/include/opencv2/dnn/dnn.hpp:1838,1993,2054], and recognition additionally
 requires a character vocabulary [modules/dnn/include/opencv2/dnn/dnn.hpp:1880] together with a
 decode type, the documented values being `"CTC-greedy"` and `"CTC-prefix-beam-search"`
-[modules/dnn/include/opencv2/dnn/dnn.hpp:1857]; the recogniser family the wrapper documents is
+[modules/dnn/include/opencv2/dnn/dnn.hpp:1852-1857]; the recogniser family the wrapper documents is
 CRNN-CTC [modules/dnn/include/opencv2/dnn/dnn.hpp:1825].
 
 **No OCR asset exists in the in-scope source domain** — no weights, no detector or recogniser
@@ -1702,7 +1711,7 @@ license, package and validate:
   a deployment whose format needs a configuration file needs that file as well as the weights.
 - **A character vocabulary and a decode type, for recognition.** The vocabulary is set on the
   recogniser [modules/dnn/include/opencv2/dnn/dnn.hpp:1880] and the decode type selects between the
-  two documented decoding methods [modules/dnn/include/opencv2/dnn/dnn.hpp:1857]. Neither has a
+  two documented decoding methods [modules/dnn/include/opencv2/dnn/dnn.hpp:1852-1857]. Neither has a
   value until the caller supplies one, and recognition without both is not configured.
 - **A label set or taxonomy that means something to this use case**, for classification and
   detection. Classification returns a class index and a score
@@ -1820,15 +1829,19 @@ Each entry in the array carries exactly these fields:
 | `confidence` | The two-valued rule-satisfaction indicator above, `complete` or `partial`. Not a probability, and not to be thresholded as one. |
 | `geometry` | The changed-region geometry the rule produced where it produced one (§3.4), and `null` where the rule is not geometric or the deployment derives no regions. |
 
-**How this reads against `extraction.status`.** The four status values of §5.7 are unchanged by it.
-`status` reports the extraction *attempt* on that frame as a whole, while the `actions` array is
-populated from the event stream and is independent of whether text extraction ran or succeeded:
-where the two halves disagree — actions anchored on a frame whose text extraction failed, or text
-recognised on a frame no action anchored to — the status is `partial`, which is exactly the mixed
-case §5.7 defines it for. `not_attempted` means neither half ran. An empty `actions` array on a
-frame whose status is `succeeded` means no action anchored there, not that aggregation was skipped.
-And a frame whose extraction failed still produces a record (§4.5), so an action already anchored
-to it is not lost by the failure of something else on the same frame.
+**How this reads against `extraction.status`.** The four status values of §5.7 are unchanged by it,
+and so is their subject: `status` reports the *text*-extraction attempt of §4.1 through §4.3 — the
+stage that fails for a missing asset or a rejected region — and says nothing about the aggregation
+of this section, which runs without a model or an asset. The object's two payloads are therefore
+independent, and a disagreement between them is not a status value: actions anchored on a frame
+whose text extraction failed, and text recognised on a frame no action anchored to, are both
+ordinary, and each leaves `status` describing the text attempt alone. `partial` is the mixed case
+*within* that attempt — some spans recognised, some regions rejected — and `not_attempted` says the
+text attempt did not run, whatever the aggregation did. The aggregation's own state is carried by
+the `actions` array rather than by the status: an empty array where aggregation ran and nothing
+anchored to this frame, JSON `null` where the deployment runs no aggregation, and never an omitted
+key (§5.3). And a frame whose text extraction failed still produces a record (§4.5), so an action
+already anchored to it is not lost by the failure of something else on the same frame.
 
 **Route 3 — learned visual classification.** Optional, and separate. Its three prerequisites are an
 enumerated action taxonomy for the target domain, a model trained for it, and labelled screen
@@ -2249,19 +2262,22 @@ by the in-scope modules, and none outside them is named here.
 ## 5.7 Extraction state: four values, not a boolean
 
 The `extraction` object on a `frame` record carries a `status` of `not_attempted`, `succeeded`,
-`failed` or `partial`, together with the payload of §4 where there is one. Four values rather than
-two, because "extraction did not run" and "extraction ran and found nothing" are different facts: a
+`failed` or `partial`, together with the payloads of §4 where there are any. The status has exactly
+one subject, and it is the **text** extraction of §4.1 through §4.3. Four values rather than two,
+because "extraction did not run" and "extraction ran and found nothing" are different facts: a
 consumer that cannot distinguish them cannot re-run the failures, and a session with extraction
 disabled would be indistinguishable from a session whose screen held no text.
 
 `partial` is the state a long frame needs — some spans recognised, some regions rejected — and it
-is reported rather than rounded to either neighbour. It is also the state the mixed case takes when
-the object's two payloads disagree, which is the second thing this object carries: the text spans of
-§4.1 where recognition ran, and the `actions` array of §4.4 where an action anchored to this frame.
-The array is the serialised location of a derived action, with its own fields and its linkage back
-to the `input` records it was composed from, and it is written as an empty array rather than omitted
-where nothing anchored — for the same reason the common fields are never omitted (§5.3). One status
-therefore describes the attempt and two payloads describe what it produced.
+is reported rather than rounded to either neighbour. It is a statement about that one attempt and
+not about the object as a whole, because the object carries a second payload the status does not
+describe: the text spans of §4.1 where recognition ran, and the `actions` array of §4.4 where an
+action anchored to this frame. The array is the serialised location of a derived action, with its
+own fields and its linkage back to the `input` records it was composed from, and with its own
+presence rule — an empty array where aggregation ran and nothing anchored, JSON `null` where no
+aggregation ran, and never an omitted key, for the same reason the common fields are never omitted
+(§5.3). One status therefore describes the text attempt, and each payload describes what its own
+stage produced.
 
 The object's exact shape is fixed in §5.13.7: a `status` from that closed set, a `spans` array whose
 members are the text spans of §4.1 with their geometry and confidences, and an `actions` array whose
@@ -2270,7 +2286,7 @@ members are the aggregated actions of §4.4. Two properties of that shape matter
 four-state status exists to separate from `not_attempted` (R4.10). And `actions` is independent of
 `status`, because the deterministic aggregation of §4.4 needs no model or asset and therefore cannot
 fail in the way a missing recogniser does — `status` reports the text attempt, and an aggregation
-that did not run is an absent `actions` array rather than a failed extraction.
+that did not run is an `actions` array written as JSON `null` rather than a failed extraction.
 
 ## 5.8 The durability guarantee, and the assumptions it rests on
 
@@ -2882,9 +2898,14 @@ and at most one with `lifecycle` of `end` (R5.5, R5.28).
 | `span` | `detection_confidence` | required | number | Finite, as the detector reported it [modules/dnn/include/opencv2/dnn/dnn.hpp:1940]. **The schema asserts no range**, because the surveyed surface declares none for this value, and a range asserted here would be an invention rather than a citation. Its magnitude is bounded as §5.13.14 states, which is a statement about what a reader can hold and not about what the detector reports. |
 | `span` | `text` | nullable | string \| null | The recognised string, or `null` where recognition did not run for this span. Open by design and bounded as §5.13.11 states. |
 | `span` | `recognition_confidence` | nullable | number \| null | Finite where present, with the magnitude bound of §5.13.14, and `null` where the route supplied none — which is the usual case, since the recognition surface returns strings alone (R4.3). A detection confidence never appears here. |
-| `action` | `action` | required | string | Exactly one of `click`, `drag`, `scroll`, `key_sequence`, `caused_change`. These are the five members of §4.4's taxonomy that bind to a frame. `unattended_change` is not a member of this field and never appears in a record: it is a statement about a segment, which a consumer evaluates over the segment boundaries, admitted frames and retained events the stream already carries, and reads under R2.16. |
-| `action` | `indicator` | required | string | Exactly one of `complete` or `partial` — the rule-satisfaction indicator of §4.4, which carries no distribution and is not to be thresholded as one. |
-| `action` | `events` | required | array | A non-empty array of integers, each the `event_id` of an `input` record present in the stream (R5.46). This is what makes an aggregated action inspectable: the rule's inputs are named rather than summarised. |
+| `action` | `action_id` | required | string | Matches `[A-Za-z0-9_-]{8,64}`, on the same terms as the other application-generated identifiers of this schema (§5.13.1, §5.13.8) though it is never a path component, and carried by no other action in the stream (§5.13.12), so a consumer can name an action without repeating its contents (§4.4). |
+| `action` | `type` | required | string | Exactly one of `click`, `drag`, `scroll`, `key_sequence`, `caused_change` — the Aggregated action set of §5.13.10, which is the five members of §4.4's taxonomy that bind to a frame. `unattended_change` is not a member of this field and never appears in a record: it is a statement about a segment, which a consumer evaluates over the segment boundaries, admitted frames and retained events the stream already carries, and reads under R2.16. |
+| `action` | `t_start`, `t_end` | required | integer | Session-clock values in the unit and range `t_mono` carries (§5.13.1, R2.3), taken from the contributing events — the first event's `t_mono` and the last event's — and never read from a clock at the moment the action was derived (§4.4). `t_end` is not less than `t_start`, and each carries the wide bound pair of §5.13.14. |
+| `action` | `input_event_ids` | required | array | A non-empty array of integers in ascending order, each the `event_id` of an `input` record present in the stream (R5.46, §5.13.12). This is what makes an aggregated action inspectable: the rule's inputs are named rather than summarised. Each member carries the wide bound pair of §5.13.14. |
+| `action` | `frame_event_id` | required | integer | The `event_id` of the anchor `frame` record this entry sits in — the value that record's own common head carries (§5.13.1) — written explicitly so the entry still resolves to its frame when read out of the enclosing record (§4.4). It carries the wide bound pair of §5.13.14. |
+| `action` | `source` | required | string | The normalised identity of §5.5, never `null` here and equal to the anchor frame's by the pairing precondition of §4.4, hence equal to the session-start record's `authorised_source` (R5.46). Open by design as a value, and bounded as §5.13.11 states. |
+| `action` | `confidence` | required | string | Exactly one of `complete` or `partial` — the Rule indicator set of §5.13.10, which is §4.4's two-valued rule-satisfaction indicator. It carries no distribution and is not to be thresholded as one. |
+| `action` | `geometry` | nullable | object \| null | A `geometry` object of §5.13.8 describing the changed region the rule produced (§3.4), and `null` where the rule is not geometric or the deployment derives no regions (§4.4). |
 
 ### 5.13.8 The `annotation` object and its payloads
 
@@ -2988,8 +3009,9 @@ compatible with the streaming limits of R5.27.
 - **Every `annotation` reference resolves**: `target` names a `frame` record present in the stream,
   an `update` or `delete` has a preceding `create` for its `annotation_id` in `event_id` order, and
   no identifier has two `create` revisions (R5.28).
-- **Every `action` in an `extraction` object names its inputs**, each member of `events` being the
-  `event_id` of an `input` record present in the stream (R5.46).
+- **Every `action` in an `extraction` object names its inputs, under an identifier no other action
+  carries**: each member of `input_event_ids` is the `event_id` of an `input` record present in the
+  stream (R5.46), and no `action_id` appears twice in one stream (R5.28).
 
 ### 5.13.13 The image encodings version `1` admits, and the extension each member implies
 
@@ -3060,11 +3082,13 @@ every conforming implementation must represent exactly, being the largest whose 
 parsed into. A value of larger magnitude is a rejection and never a rounded acceptance, because
 rounding is how two readers come to hold different timelines from one stream.
 
-**Four fields are bounded wider, and that costs a reader something specific.** `event_id` and
-`t_mono`, together with the two fields that carry an `event_id` — an annotation's `target` and each
-member of an action's `events` array — are bounded by the signed 64-bit range R2.3 fixes, which is
+**Seven fields are bounded wider, and that costs a reader something specific.** `event_id` and
+`t_mono`, together with the three fields that carry an `event_id` — an annotation's `target`, an
+action's `frame_event_id` and each member of an action's `input_event_ids` array — and the two
+clock values an action carries, its `t_start` and its `t_end`, are bounded by the signed 64-bit
+range R2.3 fixes, which is
 not negative and at most `9223372036854775807`, because a nanosecond count from a session's zero
-point needs that range and an identifier drawn from the same counter has to match it. For those four fields, and no others, a conforming reader parses the value
+point needs that range and an identifier drawn from the same counter has to match it. For those seven fields, and no others, a conforming reader parses the value
 with an exact signed 64-bit integer representation and never through a floating one; a reader that
 cannot hold them exactly refuses the stream rather than rounding an identifier or a clock value
 (R5.30). Stating that here is what makes the wider ceiling safe: it is the only reason two readers
@@ -3074,7 +3098,8 @@ agree about values above the general ceiling.
 |---|---|---|
 | `schema_version` | Exactly `1`, so no range arises (§5.13.1). | Fixed by that value. |
 | `event_id`, `t_mono` | Not negative: a sequence number counts from the session's first record and `t_mono` from the clock's zero point, so neither has a value before its own origin (§2.2). | The signed 64-bit range R2.3 fixes, under the wide-field rule above. |
-| `annotation` `target`; each member of `action` `events` | Not negative, each being an `event_id`. | The same signed 64-bit range, for the same reason. |
+| `annotation` `target`; `action` `frame_event_id`; each member of `action` `input_event_ids` | Not negative, each being an `event_id`. | The same signed 64-bit range, for the same reason. |
+| `action` `t_start`, `t_end` | Not negative, each being a value of the session clock, which counts from its own zero point (§2.2) — and `t_end` not less than `t_start`, since an action does not end before it begins (§5.13.7). | The same signed 64-bit range, for the same reason as `t_mono`. |
 | `change_score`; `gate` `threshold` | The closed unit interval of §3.2 — a fraction of pixels, and a threshold compared against one. | `1`, from that interval. |
 | `unit_point` `x`, `y` | The closed unit interval of §2.1. | `1`, from that interval. |
 | `screenshot_bytes` | Greater than zero: the field is present exactly where an image was retained and written, and an encoded image is at least one byte, so a zero would describe a record claiming an image and no image. A truncated or replaced file is detected by comparison against this value rather than by admitting zero into it (R5.24). | `9007199254740991`. |
